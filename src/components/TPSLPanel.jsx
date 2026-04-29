@@ -15,9 +15,17 @@ function NumberInput(props) {
   );
 }
 
+const OBJECTIVES = [
+  ["cum", "💰 누적 수익", "전체 trades 누적 합 최대"],
+  ["efficiency", "⚡ 일당 효율", "보유일당 EV 최대 (짧고 굵게)"],
+  ["ev", "📈 평균 EV", "건당 기댓값 최대"],
+  ["winrate", "🎯 승률", "승률 최대 (안정)"],
+];
+
 export default function TPSLPanel(props) {
   const [searching, setSearching] = useState(false);
   const [bestInfo, setBestInfo] = useState(null);
+  const [objective, setObjective] = useState("cum");
 
   function update(field, value) {
     const next = Object.assign({}, props.rule);
@@ -25,62 +33,45 @@ export default function TPSLPanel(props) {
     props.onChange(next);
   }
 
-  function handleAutoMaxSingle() {
+  function runAutoMax() {
     setSearching(true);
     setTimeout(function () {
-      const result = gridSearchSingle(props.trades, {
-        tps: [10, 15, 20, 25, 30, 40, 50, 70, 100],
-        sls: [-3, -5, -7, -10, -15, -20],
-        maxDays: props.rule.maxDays,
-      });
-      const b = result.best;
-      setBestInfo({
-        mode: "single",
-        msg: "최적: TP " + b.tp + " / SL " + b.sl + " → 누적 " +
-             (b.cum >= 0 ? "+" : "") + b.cum.toFixed(1) + "% / EV " +
-             (b.avg >= 0 ? "+" : "") + b.avg.toFixed(2) + "% / 승률 " + b.win.toFixed(1) + "%",
-      });
-      props.onChange(Object.assign({}, props.rule, {
-        mode: "single", tp: b.tp, sl: b.sl,
-      }));
+      let result;
+      if (props.rule.mode === "single") {
+        result = gridSearchSingle(props.trades, {
+          tps: [10, 15, 20, 25, 30, 40, 50, 70, 100],
+          sls: [-3, -5, -7, -10, -15, -20],
+          maxDaysList: [3, 5, 7, 10, 15, 20],
+          objective: objective,
+        });
+        const b = result.best;
+        props.onChange(Object.assign({}, props.rule, {
+          tp: b.tp, sl: b.sl, maxDays: b.maxDays,
+        }));
+      } else {
+        result = gridSearchSplit(props.trades, {
+          tp1s: [10, 15, 20, 25, 30],
+          tp2s: [30, 50, 70, 100],
+          sls: [-3, -5, -7, -10, -15],
+          fsls: [0, 1],
+          maxDaysList: [10, 15, 20],
+          objective: objective,
+        });
+        const b = result.best;
+        props.onChange(Object.assign({}, props.rule, {
+          tp1: b.tp1, tp2: b.tp2, sl: b.sl, fsl: b.fsl, maxDays: b.maxDays,
+        }));
+      }
+      setBestInfo({ result, objective });
       setSearching(false);
     }, 50);
   }
 
-  function handleAutoMaxSplit() {
-    setSearching(true);
-    setTimeout(function () {
-      const result = gridSearchSplit(props.trades, {
-        tp1s: [10, 15, 20, 25, 30],
-        tp2s: [30, 50, 70, 100],
-        sls: [-3, -5, -7, -10, -15],
-        fsls: [0, 1],
-        maxDays: props.rule.maxDays,
-      });
-      const b = result.best;
-      setBestInfo({
-        mode: "split",
-        msg: "최적 (분할): TP1=" + b.tp1 + " / TP2=" + b.tp2 + " / SL=" + b.sl +
-             " / fSL=" + (b.fsl ? "ON" : "OFF") + " → 누적 " +
-             (b.cum >= 0 ? "+" : "") + b.cum.toFixed(1) + "% / EV " +
-             (b.avg >= 0 ? "+" : "") + b.avg.toFixed(2) + "%",
-      });
-      props.onChange(Object.assign({}, props.rule, {
-        mode: "split", tp1: b.tp1, tp2: b.tp2, sl: b.sl, fsl: b.fsl,
-      }));
-      setSearching(false);
-    }, 50);
-  }
-
-  function handleApplyOptimal() {
-    // 1차 백테스트 결과 디폴트
+  function applyPreset() {
     props.onChange(Object.assign({}, props.rule, {
       mode: "single", tp: 70, sl: -10, maxDays: 20,
     }));
-    setBestInfo({
-      mode: "preset",
-      msg: "1차 백테스트 권장: TP +70 / SL -10 (베이스셋 EV +2.32%)",
-    });
+    setBestInfo(null);
   }
 
   return (
@@ -97,30 +88,17 @@ export default function TPSLPanel(props) {
         {/* 모드 토글 */}
         <div style={{ display: "flex", gap: 4 }}>
           <button onClick={function () { update("mode", "single"); }}
-                  style={{
-                    background: props.rule.mode === "single" ? "#3b82f6" : "#f1f5f9",
-                    color: props.rule.mode === "single" ? "#fff" : "#475569",
-                    border: "1px solid " + (props.rule.mode === "single" ? "#3b82f6" : "#cbd5e1"),
-                    borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer",
-                    fontWeight: 700,
-                  }}>
+                  style={modeBtn(props.rule.mode === "single")}>
             단일 TP
           </button>
           <button onClick={function () { update("mode", "split"); }}
-                  style={{
-                    background: props.rule.mode === "split" ? "#3b82f6" : "#f1f5f9",
-                    color: props.rule.mode === "split" ? "#fff" : "#475569",
-                    border: "1px solid " + (props.rule.mode === "split" ? "#3b82f6" : "#cbd5e1"),
-                    borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer",
-                    fontWeight: 700,
-                  }}>
+                  style={modeBtn(props.rule.mode === "split")}>
             분할 TP1+TP2
           </button>
         </div>
 
         <span style={{ color: "#cbd5e1" }}>|</span>
 
-        {/* 단일 모드 입력 */}
         {props.rule.mode === "single" && (
           <React.Fragment>
             <NumberInput label="TP" value={props.rule.tp}
@@ -130,7 +108,6 @@ export default function TPSLPanel(props) {
           </React.Fragment>
         )}
 
-        {/* 분할 모드 입력 */}
         {props.rule.mode === "split" && (
           <React.Fragment>
             <NumberInput label="TP1" value={props.rule.tp1}
@@ -153,43 +130,159 @@ export default function TPSLPanel(props) {
 
         <span style={{ marginLeft: "auto" }} />
 
-        {/* 자동 최적화 */}
-        <button onClick={props.rule.mode === "single" ? handleAutoMaxSingle : handleAutoMaxSplit}
-                disabled={searching}
-                style={{
-                  background: "#dbeafe", color: "#1e40af", border: "none",
-                  borderRadius: 6, padding: "5px 14px", fontSize: 12,
-                  cursor: searching ? "wait" : "pointer", fontWeight: 700,
-                }}>
-          {searching ? "탐색 중..." : "🔍 수익MAX 자동"}
-        </button>
-
-        <button onClick={handleApplyOptimal}
+        <button onClick={applyPreset}
                 style={{
                   background: "#fce7f3", color: "#9f1239", border: "none",
                   borderRadius: 6, padding: "5px 14px", fontSize: 12,
                   cursor: "pointer", fontWeight: 700,
                 }}>
-          ⭐ 권장값 (TP70/SL-10)
+          ⭐ 권장값 (TP70/SL-10/20일)
         </button>
       </div>
 
-      {/* 자동 최적화 결과 메시지 */}
-      {bestInfo && (
-        <div style={{
-          fontSize: 11, color: "#1e40af", padding: "6px 10px",
-          background: "#eff6ff", borderRadius: 6,
-        }}>
-          ✓ {bestInfo.msg}
-        </div>
+      {/* 자동 최적화 행 */}
+      <div style={{
+        background: "#f8fafc", borderRadius: 8, padding: 10,
+        display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+        marginBottom: 8,
+      }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#475569" }}>
+          🔍 자동 최적화 — 무엇을 최대화?
+        </span>
+        {OBJECTIVES.map(function (o) {
+          return (
+            <button key={o[0]} onClick={function () { setObjective(o[0]); }}
+                    title={o[2]}
+                    style={{
+                      background: objective === o[0] ? "#3b82f6" : "#fff",
+                      color: objective === o[0] ? "#fff" : "#475569",
+                      border: "1px solid " + (objective === o[0] ? "#3b82f6" : "#cbd5e1"),
+                      borderRadius: 6, padding: "5px 12px", fontSize: 12,
+                      cursor: "pointer", fontWeight: 700,
+                    }}>
+              {o[1]}
+            </button>
+          );
+        })}
+        <button onClick={runAutoMax} disabled={searching}
+                style={{
+                  marginLeft: "auto",
+                  background: "#1e293b", color: "#fff", border: "none",
+                  borderRadius: 6, padding: "6px 16px", fontSize: 12,
+                  cursor: searching ? "wait" : "pointer", fontWeight: 700,
+                }}>
+          {searching ? "탐색 중..." : "🚀 자동 적용"}
+        </button>
+      </div>
+
+      {/* 자동 최적화 결과 + TOP5 */}
+      {bestInfo && bestInfo.result && bestInfo.result.best && (
+        <BestResult bestInfo={bestInfo} mode={props.rule.mode} />
       )}
 
-      {/* 모드 설명 */}
       <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>
+        진입: 그날 종가 (15:20 KST 시장가 가정) /{" "}
         {props.rule.mode === "single"
-          ? "단일 TP: TP 도달 시 전량 청산. SL 또는 만료(20일) 시 종가 청산."
-          : "분할 TP: TP1 절반 익절 → TP2 잔량 익절. fSL ON이면 TP1 후 본전 보장."}
+          ? "단일 TP: TP 또는 SL 도달 시 즉시 청산. 만료 시 종가 청산."
+          : "분할 TP: TP1 절반 → TP2 잔량. fSL ON이면 TP1 후 본전 보장."}
       </div>
     </div>
   );
+}
+
+function BestResult(props) {
+  const b = props.bestInfo.result.best;
+  const top5 = props.bestInfo.result.top5;
+  const obj = props.bestInfo.objective;
+  const mode = props.mode;
+
+  const scoreLabel = obj === "efficiency" ? "일당 EV" :
+                     obj === "ev" ? "건당 EV" :
+                     obj === "winrate" ? "승률" : "누적";
+
+  return (
+    <div style={{
+      background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8,
+      padding: 12, marginBottom: 8,
+    }}>
+      <div style={{ fontSize: 12, color: "#1e40af", fontWeight: 700,
+                    marginBottom: 8 }}>
+        ✓ 최적: {mode === "single"
+          ? "TP+" + b.tp + " / SL" + b.sl + " / 보유 " + b.maxDays + "일"
+          : "TP1+" + b.tp1 + " / TP2+" + b.tp2 + " / SL" + b.sl
+            + " / fSL " + (b.fsl ? "ON" : "OFF") + " / 보유 " + b.maxDays + "일"}
+      </div>
+
+      {/* 핵심 통계 7개 */}
+      <div style={{ display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
+                    gap: 6, marginBottom: 8 }}>
+        <Stat label="누적" value={(b.cum >= 0 ? "+" : "") + b.cum.toFixed(0) + "%"}
+              color={b.cum > 0 ? "#dc2626" : "#2563eb"} />
+        <Stat label="EV" value={(b.avg >= 0 ? "+" : "") + b.avg.toFixed(2) + "%"}
+              color={b.avg > 0 ? "#dc2626" : "#2563eb"} />
+        <Stat label="승률" value={b.win.toFixed(1) + "%"} color="#0891b2" />
+        <Stat label="평균 익절일" value={b.avgDaysTP > 0 ? b.avgDaysTP.toFixed(1) + "일" : "-"}
+              color="#dc2626" />
+        <Stat label="평균 손절일" value={b.avgDaysSL > 0 ? b.avgDaysSL.toFixed(1) + "일" : "-"}
+              color="#2563eb" />
+        <Stat label="평균 보유" value={b.days.toFixed(1) + "일"} color="#475569" />
+        <Stat label="MDD" value={b.mdd.toFixed(0) + "%"} color="#7c2d12" />
+      </div>
+
+      {/* TOP 5 */}
+      <details>
+        <summary style={{ fontSize: 11, color: "#1e40af", cursor: "pointer",
+                          userSelect: "none", fontWeight: 600 }}>
+          🏆 TOP 5 ({scoreLabel} 기준)
+        </summary>
+        <div style={{ marginTop: 6, fontSize: 11, color: "#1e293b" }}>
+          {top5.map(function (r, i) {
+            const cfg = mode === "single"
+              ? "TP" + r.tp + " SL" + r.sl + " " + r.maxDays + "일"
+              : "TP1=" + r.tp1 + " TP2=" + r.tp2 + " SL" + r.sl + " " + r.maxDays + "일";
+            return (
+              <div key={i} style={{
+                display: "flex", justifyContent: "space-between",
+                padding: "3px 6px", background: i === 0 ? "#fef3c7" : "transparent",
+                borderRadius: 4,
+              }}>
+                <span style={{ fontWeight: i === 0 ? 700 : 400 }}>
+                  {i + 1}. {cfg}
+                </span>
+                <span style={{ color: "#dc2626", fontWeight: 600 }}>
+                  누적 {r.cum >= 0 ? "+" : ""}{r.cum.toFixed(0)}% /
+                  EV {r.avg >= 0 ? "+" : ""}{r.avg.toFixed(2)}% /
+                  승률 {r.win.toFixed(0)}% /
+                  익절 {r.avgDaysTP > 0 ? r.avgDaysTP.toFixed(1) + "d" : "-"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function Stat(props) {
+  return (
+    <div style={{ background: "#fff", borderRadius: 6, padding: "5px 8px",
+                  border: "1px solid #dbeafe" }}>
+      <div style={{ fontSize: 9, color: "#94a3b8" }}>{props.label}</div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: props.color }}>
+        {props.value}
+      </div>
+    </div>
+  );
+}
+
+function modeBtn(active) {
+  return {
+    background: active ? "#3b82f6" : "#f1f5f9",
+    color: active ? "#fff" : "#475569",
+    border: "1px solid " + (active ? "#3b82f6" : "#cbd5e1"),
+    borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer",
+    fontWeight: 700,
+  };
 }
