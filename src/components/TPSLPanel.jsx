@@ -37,7 +37,6 @@ function fmtKrw(amt) {
 }
 
 export default function TPSLPanel(props) {
-  const [searching, setSearching] = useState(false);
   const [bestInfo, setBestInfo] = useState(null);
   const [activeObj, setActiveObj] = useState(null);
 
@@ -49,53 +48,67 @@ export default function TPSLPanel(props) {
 
   function applyObjective(objKey) {
     setActiveObj(objKey);
-    setSearching(true);
-    setTimeout(function () {
-      let realObj = "cum";
-      let maxDaysList = [3, 5, 7, 10, 15, 20, 25, 30, 60];
-      if (objKey === "cum5") { maxDaysList = [5]; }
-      else if (objKey === "cum10") { maxDaysList = [10]; }
-      else if (objKey === "cum15") { maxDaysList = [15]; }
-      else if (objKey === "cum20") { maxDaysList = [20]; }
-      else if (objKey === "cum25") { maxDaysList = [25]; }
-      else if (objKey === "cum30") { maxDaysList = [30]; }
-      else if (objKey === "cum60") { maxDaysList = [60]; }
-      else if (objKey === "efficiency") { realObj = "efficiency"; }
 
-      // 핵심: tradesForGrid (기간 제외) 사용 → 룰을 시간 무관 고정
-      const target = props.tradesForGrid || props.trades;
-      const tps = [10, 15, 20, 25, 30, 50, 70, 100, 150];
-      const sls = [-3, -5, -7, -10, -15];
+    let realObj = "cum";
+    let maxDaysList = [3, 5, 7, 10, 15, 20, 25, 30, 60];
+    if (objKey === "cum5") { maxDaysList = [5]; }
+    else if (objKey === "cum10") { maxDaysList = [10]; }
+    else if (objKey === "cum15") { maxDaysList = [15]; }
+    else if (objKey === "cum20") { maxDaysList = [20]; }
+    else if (objKey === "cum25") { maxDaysList = [25]; }
+    else if (objKey === "cum30") { maxDaysList = [30]; }
+    else if (objKey === "cum60") { maxDaysList = [60]; }
+    else if (objKey === "efficiency") { realObj = "efficiency"; }
 
-      let result;
-      if (props.rule.mode === "single") {
-        result = gridSearchSingle(target, {
-          tps, sls, maxDaysList, objective: realObj,
-        });
-        const b = result.best;
-        if (b) {
-          props.onChange(Object.assign({}, props.rule, {
-            tp: b.tp, sl: b.sl, maxDays: b.maxDays,
-          }));
-        }
-      } else {
-        result = gridSearchSplit(target, {
-          tp1s: [10, 15, 20, 25, 30, 50],
-          tp2s: [30, 50, 70, 100, 150],
-          sls, fsls: [0, 1],
-          maxDaysList,
-          objective: realObj,
-        });
-        const b = result.best;
-        if (b) {
-          props.onChange(Object.assign({}, props.rule, {
-            tp1: b.tp1, tp2: b.tp2, sl: b.sl, fsl: b.fsl, maxDays: b.maxDays,
-          }));
-        }
+    const target = props.tradesForGrid || props.trades;
+    const tps = [10, 15, 20, 25, 30, 50, 70, 100, 150];
+    const sls = [-3, -5, -7, -10, -15];
+
+    let result;
+    if (props.rule.mode === "single") {
+      result = gridSearchSingle(target, {
+        tps: tps, sls: sls, maxDaysList: maxDaysList, objective: realObj,
+      });
+      const b = result.best;
+      console.log("[applyObjective]", objKey, "→ best:", b ? {tp: b.tp, sl: b.sl, maxDays: b.maxDays, cum: b.cum} : null);
+      if (b) {
+        // 명시적으로 새 룰 객체 (props.rule spread 후 덮어쓰기)
+        const newRule = {
+          mode: "single",
+          tp: b.tp,
+          sl: b.sl,
+          maxDays: b.maxDays,
+          tp1: props.rule.tp1,
+          tp2: props.rule.tp2,
+          fsl: props.rule.fsl,
+        };
+        console.log("[applyObjective] onChange call:", newRule);
+        props.onChange(newRule);
       }
-      setBestInfo({ result, objective: objKey });
-      setSearching(false);
-    }, 30);
+    } else {
+      result = gridSearchSplit(target, {
+        tp1s: [10, 15, 20, 25, 30, 50],
+        tp2s: [30, 50, 70, 100, 150],
+        sls: sls, fsls: [0, 1],
+        maxDaysList: maxDaysList,
+        objective: realObj,
+      });
+      const b = result.best;
+      console.log("[applyObjective split]", objKey, "→ best:", b ? {tp1: b.tp1, tp2: b.tp2, sl: b.sl, fsl: b.fsl, maxDays: b.maxDays, cum: b.cum} : null);
+      if (b) {
+        const newRule = {
+          mode: "split",
+          tp: props.rule.tp,
+          sl: b.sl,
+          maxDays: b.maxDays,
+          tp1: b.tp1,
+          tp2: b.tp2,
+          fsl: b.fsl,
+        };
+        props.onChange(newRule);
+      }
+    }
+    setBestInfo({ result: result, objective: objKey });
   }
 
   function applyPreset() {
@@ -176,15 +189,15 @@ export default function TPSLPanel(props) {
           const active = activeObj === o[0];
           return (
             <button key={o[0]} onClick={function () { applyObjective(o[0]); }}
-                    title={o[2]} disabled={searching}
+                    title={o[2]}
                     style={{
                       background: active ? "#1e293b" : "#fff",
                       color: active ? "#fff" : "#475569",
                       border: "1px solid " + (active ? "#1e293b" : "#cbd5e1"),
                       borderRadius: 6, padding: "6px 14px", fontSize: 12,
-                      cursor: searching ? "wait" : "pointer", fontWeight: 700,
+                      cursor: "pointer", fontWeight: 700,
                     }}>
-              {searching && active ? "⏳ ..." : o[1]}
+              {o[1]}
             </button>
           );
         })}
