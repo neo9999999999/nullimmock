@@ -40,6 +40,33 @@ export default function TodaySignals(props) {
   const rule = props.rule;
   const investAmt = props.investAmt || 100000;
 
+  const [scanning, setScanning] = React.useState(false);
+  const [scanResult, setScanResult] = React.useState(null);
+  const [scanError, setScanError] = React.useState(null);
+
+  async function handleScan() {
+    setScanning(true);
+    setScanError(null);
+    setScanResult(null);
+    try {
+      const res = await fetch("/api/scan-signals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),  // 자체 풀 사용
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setScanError(data.error || "스캔 실패: " + res.status);
+      } else {
+        setScanResult(data);
+      }
+    } catch (e) {
+      setScanError(String(e));
+    } finally {
+      setScanning(false);
+    }
+  }
+
   const todayMonth = getTodayMonth();
   const todayStr = getTodayStr();
   const isOffSeason = [4, 5, 6, 7].indexOf(todayMonth) >= 0;
@@ -121,12 +148,39 @@ export default function TodaySignals(props) {
             21회+ × 5일선 돌파 × 4-7월 제외 / TP+100/SL-10/20일
           </div>
         </div>
-        <div style={{ fontSize: 11, color: "#94a3b8", textAlign: "right" }}>
-          데이터 마지막 진입일: <b style={{color:"#fbbf24"}}>{dataInfo.maxEntry || "-"}</b>
-          <br />
-          신선도: {dataInfo.stale > 0 ? "🟡 " + dataInfo.stale + "일 지남" : "🟢 최신"}
+        <div style={{ display: "flex", flexDirection: "column",
+                      alignItems: "flex-end", gap: 8 }}>
+          <button onClick={handleScan} disabled={scanning}
+                  style={{
+                    background: scanning ? "#475569" : "#10b981",
+                    color: "#fff", border: "none", borderRadius: 6,
+                    padding: "8px 16px", fontSize: 12, fontWeight: 700,
+                    cursor: scanning ? "wait" : "pointer",
+                  }}>
+            {scanning ? "⏳ KIS 스캔 중..." : "🔄 KIS 스캔 (오늘 신호 발굴)"}
+          </button>
+          <div style={{ fontSize: 11, color: "#94a3b8", textAlign: "right" }}>
+            데이터 마지막 진입일: <b style={{color:"#fbbf24"}}>{dataInfo.maxEntry || "-"}</b>
+            <br />
+            신선도: {dataInfo.stale > 0 ? "🟡 " + dataInfo.stale + "일 지남" : "🟢 최신"}
+          </div>
         </div>
       </div>
+
+      {/* 스캔 결과 */}
+      {scanError && (
+        <div style={{
+          background: "#7f1d1d", border: "1px solid #dc2626",
+          borderRadius: 6, padding: "10px 14px", marginBottom: 12,
+          fontSize: 12, color: "#fecaca",
+        }}>
+          ❌ <b>스캔 실패:</b> {scanError}
+        </div>
+      )}
+
+      {scanResult && (
+        <ScanResult data={scanResult} />
+      )}
 
       {/* 시즌 안내 */}
       {isOffSeason && (
@@ -252,6 +306,121 @@ function SummaryCard(props) {
       <div style={{ fontSize: 16, fontWeight: 800,
                     color: props.color || "#fff", marginTop: 2 }}>
         {props.value}
+      </div>
+    </div>
+  );
+}
+
+function ScanResult(props) {
+  const d = props.data;
+  const r = d.results || {};
+  return (
+    <div style={{
+      background: "#0f172a", border: "1px solid #10b981",
+      borderRadius: 8, padding: 12, marginBottom: 12,
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "#10b981",
+                    marginBottom: 8 }}>
+        🔄 KIS 스캔 결과
+        <span style={{ fontSize: 10, color: "#94a3b8", marginLeft: 8, fontWeight: 400 }}>
+          {d.scanned_at && d.scanned_at.replace("T", " ").slice(0, 19)} ·
+          {d.processed} 종목 처리 · {d.summary && d.summary.errors > 0 ? d.summary.errors + " 에러" : "에러 없음"}
+        </span>
+      </div>
+
+      {/* Section: 진입 패턴 발생 (가장 중요) */}
+      {r.entries && r.entries.length > 0 && (
+        <ScanSection
+          title="🟢 오늘 진입 패턴 발생 (최우선)"
+          items={r.entries}
+          color="#10b981"
+          render={(e) => (
+            <span>
+              <b>{e.name}</b> ({e.code}) · 시그널 {e.ref_date} +{e.ref_change}% / {e.ref_amount_billion}억
+              · D+{e.days_after}일째 5일선 돌파 진입가 {e.entry_close.toLocaleString()}원
+              ({e.entry_pct >= 0 ? "+" : ""}{e.entry_pct.toFixed(1)}%) · 최저점 {e.min_dip.toFixed(1)}%
+            </span>
+          )}
+        />
+      )}
+
+      {/* Section: 매집 중 */}
+      {r.accumulating && r.accumulating.length > 0 && (
+        <ScanSection
+          title="🟡 매집 중 (시그널 후 5~15일, 진입 임박)"
+          items={r.accumulating}
+          color="#f59e0b"
+          render={(e) => (
+            <span>
+              <b>{e.name}</b> ({e.code}) · 시그널 {e.ref_date} +{e.ref_change}%
+              · D+{e.days_since}일 / 최저 {e.min_dip.toFixed(1)}% / 현재 {e.current_pct >= 0 ? "+" : ""}{e.current_pct.toFixed(1)}%
+            </span>
+          )}
+        />
+      )}
+
+      {/* Section: 새 강한 기준봉 */}
+      {r.new_signals && r.new_signals.length > 0 && (
+        <ScanSection
+          title="✨ 오늘/어제 새 강한 기준봉 (매집 풀에 추가)"
+          items={r.new_signals}
+          color="#0891b2"
+          render={(e) => (
+            <span>
+              <b>{e.name}</b> ({e.code}) · {e.ref_date} +{e.change}% / {e.amount_billion}억
+            </span>
+          )}
+        />
+      )}
+
+      {(!r.entries || r.entries.length === 0) &&
+       (!r.accumulating || r.accumulating.length === 0) &&
+       (!r.new_signals || r.new_signals.length === 0) && (
+        <div style={{ padding: 16, textAlign: "center", color: "#94a3b8", fontSize: 12 }}>
+          신호 없음. 매집/진입 후보 0건.
+        </div>
+      )}
+
+      {/* 에러 (있으면) */}
+      {r.errors && r.errors.length > 0 && (
+        <details style={{ marginTop: 8 }}>
+          <summary style={{ fontSize: 11, color: "#ef4444", cursor: "pointer" }}>
+            ⚠️ {r.errors.length} 에러 보기
+          </summary>
+          <div style={{ fontSize: 10, color: "#fca5a5", marginTop: 4,
+                        maxHeight: 100, overflow: "auto" }}>
+            {r.errors.map((e, i) => (
+              <div key={i}>{e.name} ({e.code}): {e.error}</div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function ScanSection(props) {
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{
+        fontSize: 12, fontWeight: 700, color: props.color,
+        marginBottom: 4,
+      }}>
+        {props.title} ({props.items.length}건)
+      </div>
+      <div style={{
+        background: "#1e293b", borderRadius: 6, padding: 8,
+        fontSize: 11, color: "#cbd5e1",
+        maxHeight: 200, overflowY: "auto",
+      }}>
+        {props.items.map((item, i) => (
+          <div key={i} style={{
+            padding: "3px 0",
+            borderBottom: i < props.items.length - 1 ? "1px solid #334155" : "none",
+          }}>
+            {props.render(item)}
+          </div>
+        ))}
       </div>
     </div>
   );

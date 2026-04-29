@@ -1,0 +1,1899 @@
+[
+ {
+  "name": "펩트론",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 48,
+  "code": ""
+ },
+ {
+  "name": "휴림로봇",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 45,
+  "code": ""
+ },
+ {
+  "name": "금양",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 43,
+  "code": ""
+ },
+ {
+  "name": "엔켐",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 42,
+  "code": ""
+ },
+ {
+  "name": "인벤티지랩",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 42,
+  "code": ""
+ },
+ {
+  "name": "위메이드",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 42,
+  "code": ""
+ },
+ {
+  "name": "에코프로",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 41,
+  "code": ""
+ },
+ {
+  "name": "태성",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 41,
+  "code": ""
+ },
+ {
+  "name": "신성델타테크",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 41,
+  "code": ""
+ },
+ {
+  "name": "이수페타시스",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 40,
+  "code": ""
+ },
+ {
+  "name": "솔트룩스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 38,
+  "code": ""
+ },
+ {
+  "name": "리튬포어스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 38,
+  "code": ""
+ },
+ {
+  "name": "비에이치아이",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 37,
+  "code": ""
+ },
+ {
+  "name": "미래나노텍",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 37,
+  "code": ""
+ },
+ {
+  "name": "데브시스터즈",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 37,
+  "code": ""
+ },
+ {
+  "name": "제이엘케이",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 37,
+  "code": ""
+ },
+ {
+  "name": "중앙첨단소재",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 37,
+  "code": ""
+ },
+ {
+  "name": "HLB글로벌",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 37,
+  "code": ""
+ },
+ {
+  "name": "폴라리스오피스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 36,
+  "code": ""
+ },
+ {
+  "name": "하이드로리튬",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 36,
+  "code": ""
+ },
+ {
+  "name": "휴마시스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 36,
+  "code": ""
+ },
+ {
+  "name": "일동제약",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 35,
+  "code": ""
+ },
+ {
+  "name": "일성건설",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 35,
+  "code": ""
+ },
+ {
+  "name": "바이오니아",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 35,
+  "code": ""
+ },
+ {
+  "name": "한국비엔씨",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 35,
+  "code": ""
+ },
+ {
+  "name": "위메이드맥스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 35,
+  "code": ""
+ },
+ {
+  "name": "피에스케이홀딩스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 34,
+  "code": ""
+ },
+ {
+  "name": "와이씨",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 34,
+  "code": ""
+ },
+ {
+  "name": "현대바이오",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 34,
+  "code": ""
+ },
+ {
+  "name": "랩지노믹스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 34,
+  "code": ""
+ },
+ {
+  "name": "지에스이",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 34,
+  "code": ""
+ },
+ {
+  "name": "네이처셀",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 34,
+  "code": ""
+ },
+ {
+  "name": "HLB테라퓨틱스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 34,
+  "code": ""
+ },
+ {
+  "name": "디아이",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 33,
+  "code": ""
+ },
+ {
+  "name": "보로노이",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 33,
+  "code": ""
+ },
+ {
+  "name": "로보티즈",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 33,
+  "code": ""
+ },
+ {
+  "name": "올릭스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 33,
+  "code": ""
+ },
+ {
+  "name": "제주반도체",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 33,
+  "code": ""
+ },
+ {
+  "name": "티로보틱스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 33,
+  "code": ""
+ },
+ {
+  "name": "국전약품",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 33,
+  "code": ""
+ },
+ {
+  "name": "동신건설",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 33,
+  "code": ""
+ },
+ {
+  "name": "피코그램",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 33,
+  "code": ""
+ },
+ {
+  "name": "앱튼",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 33,
+  "code": ""
+ },
+ {
+  "name": "덕성",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 33,
+  "code": ""
+ },
+ {
+  "name": "엘앤에프",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 32,
+  "code": ""
+ },
+ {
+  "name": "제주은행",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 32,
+  "code": ""
+ },
+ {
+  "name": "우리기술",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 32,
+  "code": ""
+ },
+ {
+  "name": "아이티센글로벌",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 32,
+  "code": ""
+ },
+ {
+  "name": "필옵틱스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 32,
+  "code": ""
+ },
+ {
+  "name": "셀바스AI",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 32,
+  "code": ""
+ },
+ {
+  "name": "흥구석유",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 32,
+  "code": ""
+ },
+ {
+  "name": "소룩스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 32,
+  "code": ""
+ },
+ {
+  "name": "한국석유",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 31,
+  "code": ""
+ },
+ {
+  "name": "레인보우로보틱스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 31,
+  "code": ""
+ },
+ {
+  "name": "에스피지",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 31,
+  "code": ""
+ },
+ {
+  "name": "오킨스전자",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 31,
+  "code": ""
+ },
+ {
+  "name": "에브리봇",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 31,
+  "code": ""
+ },
+ {
+  "name": "인성정보",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 31,
+  "code": ""
+ },
+ {
+  "name": "삼아알미늄",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 30,
+  "code": ""
+ },
+ {
+  "name": "한전산업",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 30,
+  "code": ""
+ },
+ {
+  "name": "우진",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 30,
+  "code": ""
+ },
+ {
+  "name": "케어젠",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 30,
+  "code": ""
+ },
+ {
+  "name": "앱클론",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 30,
+  "code": ""
+ },
+ {
+  "name": "에이디테크놀로지",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 30,
+  "code": ""
+ },
+ {
+  "name": "대동기어",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 30,
+  "code": ""
+ },
+ {
+  "name": "샤페론",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 30,
+  "code": ""
+ },
+ {
+  "name": "엑스플러스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 30,
+  "code": ""
+ },
+ {
+  "name": "알테오젠",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 29,
+  "code": ""
+ },
+ {
+  "name": "HLB",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 29,
+  "code": ""
+ },
+ {
+  "name": "우리기술투자",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 29,
+  "code": ""
+ },
+ {
+  "name": "해성에어로보틱스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 29,
+  "code": ""
+ },
+ {
+  "name": "HLB제약",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 29,
+  "code": ""
+ },
+ {
+  "name": "바이넥스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 29,
+  "code": ""
+ },
+ {
+  "name": "광무",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 29,
+  "code": ""
+ },
+ {
+  "name": "HD현대에너지솔루션",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "성호전자",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "원익홀딩스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "에이치브이엠",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "유진로봇",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "덕산테코피아",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "강원에너지",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "갤럭시아머니트리",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "모비스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "중앙에너비스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "컴투스홀딩스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "오리엔트정공",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "일동홀딩스",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "진원생명과학",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "PN풍년",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "현대사료",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 28,
+  "code": ""
+ },
+ {
+  "name": "두산",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "한전기술",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "TCC스틸",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "삼화전기",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "이수화학",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "대한광통신",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "에스티큐브",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "파이버프로",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "카페24",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "에코프로에이치엔",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "에스비비테크",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "플리토",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "엑세스바이오",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "서울옥션",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "한일단조",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "수젠텍",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "이브이첨단소재",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "이루온",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "서전기전",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "코이즈",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "형지엘리트",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "뷰노",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "노을",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "롤링스톤",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 27,
+  "code": ""
+ },
+ {
+  "name": "한미반도체",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "일진전기",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "LS에코에너지",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "SNT에너지",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "신풍제약",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "한신기계",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "하이젠알앤엠",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "동운아나텍",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "RF머트리얼즈",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "티에프이",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "HLB이노베이션",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "다날",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "삼부토건",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "이스타코",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "실리콘투",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "압타바이오",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "이스트소프트",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "에스피시스템스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 26,
+  "code": ""
+ },
+ {
+  "name": "한농화성",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "ISC",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "디앤디파마텍",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "솔브레인홀딩스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "선익시스템",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "제룡전기",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "티엘비",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "한국피아이엠",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "대명에너지",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "자람테크놀로지",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "큐라클",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "켐트로스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "티앤알바이오팹",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "한일사료",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "센서뷰",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "셀바스헬스케어",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "미래생명자원",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "엔피",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "코난테크놀로지",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "딥노이드",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "이오플로우",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "진매트릭스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "이엔플러스",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "STX",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "네오위즈홀딩스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "나노씨엠에스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 25,
+  "code": ""
+ },
+ {
+  "name": "HJ중공업",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "가온전선",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "대원전선",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "삼천당제약",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "코오롱티슈진",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "메지온",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "삼현",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "큐리옥스바이오시스템즈",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "레이크머티리얼즈",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "코나아이",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "비나텍",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "포스코엠텍",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "빛과전자",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "디아이티",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "스맥",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "뉴프렉스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "컴퍼니케이",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "FSN",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "디아이씨",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "씨씨에스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "위지윅스튜디오",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "NE능률",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "양지사",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "KG에코솔루션",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 24,
+  "code": ""
+ },
+ {
+  "name": "고려아연",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "포스코인터내셔널",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "포스코DX",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "코리아써키트",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "코스모신소재",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "SK이터닉스",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "파미셀",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "대성에너지",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "에코프로비엠",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "현대무벡스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "주성엔지니어링",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "에스앤에스텍",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "씨아이에스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "나노신소재",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "네오셈",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "가온칩스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "보성파워텍",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "에이스테크",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "아이씨티케이",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "그린리소스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "오로스테크놀로지",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "이랜시스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "폴라리스AI",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "포톤",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "포스코스틸리온",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "이구산업",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "신송홀딩스",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "루닛",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "칩스앤미디어",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "에코앤드림",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "일승",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "셀리드",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 23,
+  "code": ""
+ },
+ {
+  "name": "LS ELECTRIC",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "OCI홀딩스",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "이수스페셜티케미컬",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "흥아해운",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "애경케미칼",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "퍼스텍",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "PKC",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "한미글로벌",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "하이스틸",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "에이비엘바이오",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "쎄트렉아이",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "젬백스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "페니트리움바이오",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "한스바이오메드",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "넥스트칩",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "포바이포",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "토마토시스템",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "엔비티",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "피플바이오",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "디젠스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "베셀",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "형지I&C",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "범양건영",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "넥슨게임즈",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "HLB생명과학",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "지노믹트리",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "박셀바이오",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "경남스틸",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "파라택시스코리아",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 22,
+  "code": ""
+ },
+ {
+  "name": "효성중공업",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "HD건설기계",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "대한전선",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "에코프로머티",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "KCTC",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "에이프로젠",
+  "market": "코스피",
+  "mkt_code": "KS",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "심텍",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "하나마이크론",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "대주전자재료",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "태웅",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "코세스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "엑스게이트",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "오르비텍",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "재영솔루텍",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "에이팩트",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "퀄리타스반도체",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "라이콤",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "나무기술",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "서남",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "핑거",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "희림",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "THE CUBE&",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "디알텍",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "SM C&C",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "한국선재",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "멕아이씨에스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "신원종합개발",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ },
+ {
+  "name": "비트맥스",
+  "market": "코스닥",
+  "mkt_code": "KO",
+  "signals_6y": 21,
+  "code": ""
+ }
+]
