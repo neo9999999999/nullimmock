@@ -129,45 +129,7 @@ export default function FilterBar(props) {
 
   return (
     <div style={{ marginBottom: 16 }}>
-      {/* 토글 헤더 */}
-      <div onClick={function () { setIsOpen(!isOpen); }}
-           style={{
-             marginBottom: 8, padding: "10px 14px",
-             background: "#0f1420", border: "1px solid " + COLORS.border,
-             borderRadius: 8, cursor: "pointer", userSelect: "none",
-             display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
-           }}>
-        <span style={{
-          color: "#fff", fontSize: 14, fontWeight: 700,
-          display: "flex", alignItems: "center", gap: 6,
-        }}>
-          <span style={{
-            display: "inline-block",
-            transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
-            transition: "transform 0.15s",
-            fontSize: 12,
-          }}>▶</span>
-          🔍 필터 {isOpen ? "(접기)" : "(펼치기)"}
-        </span>
-
-        {/* 접힌 상태에서 적용된 필터 요약 */}
-        {!isOpen && (
-          <span style={{ color: "#fbbf24", fontSize: 12, fontWeight: 600,
-                         flex: 1, minWidth: 200 }}>
-            {summaryFilters(props.filters)}
-          </span>
-        )}
-
-        {/* 매칭 카운트는 항상 표시 */}
-        <span style={{ color: "#9ca3af", fontSize: 12, marginLeft: "auto" }}>
-          매칭 <b style={{ color: "#fff" }}>{props.filteredCount}</b> /
-          전체 <b style={{ color: "#fff" }}>{props.totalCount}</b>건
-        </span>
-      </div>
-
-      {/* 펼친 상태에서만 필터 row들 표시 */}
-      {!isOpen ? null : (<React.Fragment>
-      {/* 기간 */}
+      {/* 기간 row — 항상 보임 (고정) */}
       <ButtonGroup
         label="기간"
         value={props.filters.yearRange}
@@ -192,6 +154,43 @@ export default function FilterBar(props) {
           초기화
         </button>
       </ButtonGroup>
+
+      {/* 추가 필터 토글 헤더 */}
+      <div onClick={function () { setIsOpen(!isOpen); }}
+           style={{
+             marginBottom: 8, padding: "10px 14px",
+             background: "#0f1420", border: "1px solid " + COLORS.border,
+             borderRadius: 8, cursor: "pointer", userSelect: "none",
+             display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+           }}>
+        <span style={{
+          color: "#fff", fontSize: 13, fontWeight: 700,
+          display: "flex", alignItems: "center", gap: 6,
+        }}>
+          <span style={{
+            display: "inline-block",
+            transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
+            transition: "transform 0.15s",
+            fontSize: 11,
+          }}>▶</span>
+          🔍 추가 필터 {isOpen ? "(접기)" : "(펼치기)"}
+        </span>
+
+        {!isOpen && (
+          <span style={{ color: "#fbbf24", fontSize: 12, fontWeight: 600,
+                         flex: 1, minWidth: 200 }}>
+            {summaryFilters(props.filters)}
+          </span>
+        )}
+
+        <span style={{ color: "#9ca3af", fontSize: 12, marginLeft: "auto" }}>
+          매칭 <b style={{ color: "#fff" }}>{props.filteredCount}</b> /
+          전체 <b style={{ color: "#fff" }}>{props.totalCount}</b>건
+        </span>
+      </div>
+
+      {/* 추가 필터 — 토글 가능 */}
+      {!isOpen ? null : (<React.Fragment>
 
       {/* 시그널 빈도 (주도주성) */}
       <ButtonGroup

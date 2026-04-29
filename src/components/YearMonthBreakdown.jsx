@@ -73,7 +73,9 @@ export default function YearMonthBreakdown(props) {
                 <th style={th}>n</th>
                 <th style={th}>EV</th>
                 <th style={th}>승률</th>
-                <th style={th}>누적</th>
+                <th style={th}>누적%</th>
+                <th style={th}>누적 원화</th>
+                <th style={th}>건당 원화</th>
                 <th style={th}>TP%</th>
                 <th style={th}>SL%</th>
               </tr>
@@ -82,6 +84,9 @@ export default function YearMonthBreakdown(props) {
               {breakdown.slice(0, view === "stock" ? 30 : 20).map(function (r) {
                 const cumColor = r.cum > 0 ? "#dc2626" : "#2563eb";
                 const evColor = r.avg > 0 ? "#dc2626" : "#2563eb";
+                const inv = props.investAmt || 500000;
+                const cumKrw = Math.round(inv * r.cum / 100);
+                const evKrw = Math.round(inv * r.avg / 100);
                 return (
                   <tr key={r.key} style={{ borderBottom: "1px solid #f1f5f9" }}>
                     <td style={Object.assign({}, td, { fontWeight: 700, textAlign: "left" })}>
@@ -95,6 +100,12 @@ export default function YearMonthBreakdown(props) {
                     <td style={Object.assign({}, td, { color: cumColor, fontWeight: 700 })}>
                       {(r.cum >= 0 ? "+" : "") + r.cum.toFixed(0) + "%"}
                     </td>
+                    <td style={Object.assign({}, td, { color: cumColor, fontWeight: 700, fontSize: 11 })}>
+                      {fmtKrwShort(cumKrw)}
+                    </td>
+                    <td style={Object.assign({}, td, { color: evColor, fontSize: 11 })}>
+                      {fmtKrwShort(evKrw)}
+                    </td>
                     <td style={Object.assign({}, td, { color: "#dc2626" })}>{r.tp.toFixed(0) + "%"}</td>
                     <td style={Object.assign({}, td, { color: "#2563eb" })}>{r.sl.toFixed(0) + "%"}</td>
                   </tr>
@@ -106,6 +117,15 @@ export default function YearMonthBreakdown(props) {
       )}
     </div>
   );
+}
+
+function fmtKrwShort(amt) {
+  if (amt === 0) return "0";
+  const sign = amt < 0 ? "-" : "+";
+  const abs = Math.abs(amt);
+  if (abs >= 10000000) return sign + (abs / 10000000).toFixed(1) + "천만";
+  if (abs >= 10000) return sign + Math.round(abs / 10000).toLocaleString() + "만";
+  return sign + abs.toLocaleString();
 }
 
 const th = {

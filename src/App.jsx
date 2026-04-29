@@ -9,11 +9,10 @@ import GuideModal from "./components/GuideModal.jsx";
 import { DEFAULT_FILTERS, applyFilters, sortTrades } from "./lib/filters.js";
 import { aggregateStats, simulate } from "./lib/simulator.js";
 
-// 디폴트 필터 — 1차 백테스트 최강 콤보 (n=203, 누적+1247%, 승률 33%)
+// 디폴트 필터 — 21+ × 5일선 돌파 (6/7월 포함, 사용자가 원하면 직접 토글)
 const OPTIMAL_FILTERS = Object.assign({}, DEFAULT_FILTERS, {
-  signalsRange: "21+",      // 슈퍼주도주만 (6년 21회+)
-  pattern: "ma5_breakout",  // 5일선 돌파만 (가장 강력)
-  monthExcluded: [6, 7],    // 6, 7월 제외 (계절성)
+  signalsRange: "21+",
+  pattern: "ma5_breakout",
 });
 
 // 디폴트 매매 룰 — 같은 셋의 최적 TP/SL/maxDays
@@ -105,8 +104,8 @@ export default function App() {
               🎯 주도주 눌림매매 백테스트
             </h1>
             <p style={{ margin: "4px 0 0", fontSize: 12, color: "#94a3b8" }}>
-              디폴트: <b style={{color:"#fbbf24"}}>21회+ × 5일선돌파 × 6/7월 제외 × TP100/SL-10/10일</b>
-              {" "}→ 누적 +1247% · 승률 33% · 평균 익절 6.3일 (n=203)
+              디폴트 필터: <b style={{color:"#fbbf24"}}>21회+ × 5일선 돌파</b> (n=244) ·
+              자동 최적화는 <b style={{color:"#fbbf24"}}>시간 무관 고정 룰</b>
             </p>
           </div>
           <GuideModal />
@@ -130,7 +129,7 @@ export default function App() {
                     investAmt={investAmt} />
 
         {/* 연도/월별 분석 */}
-        <YearMonthBreakdown trades={filtered} rule={rule} />
+        <YearMonthBreakdown trades={filtered} rule={rule} investAmt={investAmt} />
 
         {/* 트레이드 테이블 */}
         <TradesTable trades={sorted} sort={sort} onSort={handleSort}

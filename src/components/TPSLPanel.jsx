@@ -80,7 +80,7 @@ export default function TPSLPanel(props) {
         }
       } else {
         result = gridSearchSplit(target, {
-          tp1s: [10, 15, 20, 25, 30],
+          tp1s: [10, 15, 20, 25, 30, 50],
           tp2s: [30, 50, 70, 100, 150],
           sls, fsls: [0, 1],
           maxDaysList,
@@ -161,17 +161,6 @@ export default function TPSLPanel(props) {
 
         <NumberInput label="최대" value={props.rule.maxDays}
                      onChange={function (v) { update("maxDays", v); }} suffix="일" />
-
-        <span style={{ marginLeft: "auto" }} />
-
-        <button onClick={applyPreset}
-                style={{
-                  background: "#fce7f3", color: "#9f1239", border: "none",
-                  borderRadius: 6, padding: "5px 14px", fontSize: 12,
-                  cursor: "pointer", fontWeight: 700,
-                }}>
-          ⭐ 디폴트 (TP100/SL-10/10일)
-        </button>
       </div>
 
       {/* 자동 최적화 */}
