@@ -5,9 +5,10 @@ import {
   prevPnlDistribution, bySuperLevel, simBuyYesterday,
 } from "./gap.js";
 import SimilarSearch from "./SimilarSearch.jsx";
+import PatternScan from "./PatternScan.jsx";
 
 export default function App() {
-  const [tab, setTab] = useState("gap");  // 'gap' | 'similar'
+  const [tab, setTab] = useState("scan");  // 'scan' | 'gap' | 'similar'
 
   // 필터 상태 (gap 탭용)
   const [threshold, setThreshold] = useState(3);
@@ -128,11 +129,16 @@ export default function App() {
           display: "flex", gap: 4, marginBottom: 16,
           borderBottom: "1px solid #334155",
         }}>
+          <TabBtn active={tab === "scan"} onClick={() => setTab("scan")}
+                  label="🔥 당일 패턴 스캔" />
           <TabBtn active={tab === "gap"} onClick={() => setTab("gap")}
                   label="📊 갭상승 분석" />
           <TabBtn active={tab === "similar"} onClick={() => setTab("similar")}
                   label="🔍 유사 종목 검색" />
         </div>
+
+        {/* 탭 컨텐츠: 당일 패턴 스캔 */}
+        {tab === "scan" && <PatternScan />}
 
         {/* 탭 컨텐츠: 유사 검색 */}
         {tab === "similar" && <SimilarSearch />}
