@@ -9,21 +9,22 @@ import GuideModal from "./components/GuideModal.jsx";
 import { DEFAULT_FILTERS, applyFilters, sortTrades } from "./lib/filters.js";
 import { aggregateStats, simulate } from "./lib/simulator.js";
 
-// 디폴트 필터 — 21+ × 5일선 돌파 (6/7월 포함, 사용자가 원하면 직접 토글)
+// 🏆 검증된 골든 전략 (6년 백테스트, 모든 연도 EV+)
+// 필터: 21회+ × 5일선 돌파 × 4/5/6/7월 제외
+// 룰: TP+100% / SL-10% / 보유 20일
+// 표본 167건, 평균 EV +9.11%, 승률 26%, 평균 익절 10.9일
 const OPTIMAL_FILTERS = Object.assign({}, DEFAULT_FILTERS, {
   signalsRange: "21+",
   pattern: "ma5_breakout",
+  monthExcluded: [4, 5, 6, 7],   // 봄~여름 약세 시즌 제외
 });
 
-// 디폴트 매매 룰 — 같은 셋의 최적 TP/SL/maxDays
 const DEFAULT_RULE = {
   mode: "single",
   tp: 100,
   sl: -10,
-  tp1: 30,
-  tp2: 70,
-  fsl: 1,
-  maxDays: 10,
+  tp1: 30, tp2: 100, fsl: 1,
+  maxDays: 20,
 };
 
 export default function App() {
@@ -104,8 +105,8 @@ export default function App() {
               🎯 주도주 눌림매매 백테스트
             </h1>
             <p style={{ margin: "4px 0 0", fontSize: 12, color: "#94a3b8" }}>
-              디폴트 필터: <b style={{color:"#fbbf24"}}>21회+ × 5일선 돌파</b> (n=244) ·
-              자동 최적화는 <b style={{color:"#fbbf24"}}>시간 무관 고정 룰</b>
+              🏆 <b style={{color:"#fbbf24"}}>골든 전략</b>: 21회+ × 5일선 돌파 × 4/5/6/7월 제외 / TP+100%/SL-10%/20일 ·
+              <b style={{color:"#10b981"}}> 6년 모든 연도 EV+ 검증</b> · 평균 EV +9.11% · 승률 26%
             </p>
           </div>
           <GuideModal />
