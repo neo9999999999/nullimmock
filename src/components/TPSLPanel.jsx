@@ -16,10 +16,11 @@ function NumberInput(props) {
 }
 
 const OBJECTIVES = [
-  ["cum", "💰 누적", "전체 trades 누적 합 최대"],
-  ["efficiency", "⚡ 일당효율", "보유일당 EV 최대 (짧고 굵게)"],
+  ["cum", "💰 누적 max", "전체 maxDays 그리드 중 누적 최대"],
+  ["cum10", "🔟 10일 max", "보유 10일 고정에서 누적 최대"],
+  ["cum20", "🕐 20일 max", "보유 20일 고정에서 누적 최대"],
+  ["efficiency", "⚡ 일당효율", "보유일당 EV 최대"],
   ["ev", "📈 평균EV", "건당 기댓값 최대"],
-  ["winrate", "🎯 승률", "승률 최대"],
 ];
 
 export default function TPSLPanel(props) {
@@ -37,15 +38,21 @@ export default function TPSLPanel(props) {
   function applyObjective(objKey) {
     setActiveObj(objKey);
     setSearching(true);
-    // 다음 틱에서 그리드 (UI 즉시 갱신)
     setTimeout(function () {
+      // cum10/cum20는 maxDays 고정 + 누적 최대
+      let realObj = objKey;
+      let maxDaysList = [3, 5, 7, 10, 15, 20];
+      if (objKey === "cum10") { realObj = "cum"; maxDaysList = [10]; }
+      else if (objKey === "cum20") { realObj = "cum"; maxDaysList = [20]; }
+
       let result;
       if (props.rule.mode === "single") {
         result = gridSearchSingle(props.trades, {
-          tps: [10, 15, 20, 25, 30, 50, 70, 100, 150, 200],
-          sls: [-3, -5, -7, -10, -15, -20],
-          maxDaysList: [3, 5, 7, 10, 15, 20],
-          objective: objKey,
+          // 더 공격적 TP/SL 그리드
+          tps: [30, 50, 70, 100, 150, 200, 300, 500],
+          sls: [-5, -7, -10, -15, -20, -25],
+          maxDaysList: maxDaysList,
+          objective: realObj,
         });
         const b = result.best;
         if (b) {
@@ -55,12 +62,12 @@ export default function TPSLPanel(props) {
         }
       } else {
         result = gridSearchSplit(props.trades, {
-          tp1s: [10, 15, 20, 25, 30],
-          tp2s: [30, 50, 70, 100, 150],
-          sls: [-3, -5, -7, -10, -15],
+          tp1s: [20, 30, 50, 70],
+          tp2s: [50, 100, 150, 200, 300, 500],
+          sls: [-5, -7, -10, -15, -20],
           fsls: [0, 1],
-          maxDaysList: [7, 10, 15, 20],
-          objective: objKey,
+          maxDaysList: maxDaysList,
+          objective: realObj,
         });
         const b = result.best;
         if (b) {
