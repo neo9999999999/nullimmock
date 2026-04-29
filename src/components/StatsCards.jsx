@@ -72,17 +72,17 @@ export default function StatsCards(props) {
                   color="#0f172a"
                   sub={"평균 보유 " + s.days.toFixed(1) + "일"} />
 
-        <StatCard label="누적 수익률"
-                  value={(s.cum >= 0 ? "+" : "") + s.cum.toFixed(1) + "%"}
+        <StatCard label="∑ 모든 trade 합%"
+                  value={(s.cum >= 0 ? "+" : "") + s.cum.toFixed(0) + "%"}
                   color={cumColor}
-                  sub={invStr + " × " + s.n + "건 → " + cumKrwStr}
+                  sub={"비교 지표 (ROI 아님)"}
                   bg={s.cum > 0 ? "#fef2f2" : "#eff6ff"}
                   border={s.cum > 0 ? "#fecaca" : "#bfdbfe"} />
 
-        <StatCard label="평균 EV"
+        <StatCard label="ROI = 평균 EV"
                   value={(s.avg >= 0 ? "+" : "") + s.avg.toFixed(2) + "%"}
                   color={evColor}
-                  sub={"건당 기댓값 → " + evKrwStr} />
+                  sub={"진짜 1건 수익률"} />
 
         <StatCard label="승률"
                   value={s.win.toFixed(1) + "%"}
@@ -110,6 +110,29 @@ export default function StatsCards(props) {
                   value={s.mdd.toFixed(1) + "%"}
                   color="#9333ea"
                   sub={"가장 깊었던 하락"} />
+      </div>
+
+      {/* 진짜 자금 의미 — 헷갈림 방지 */}
+      <div style={{
+        background: "linear-gradient(to right, #fef3c7, #fde68a)",
+        border: "2px solid #f59e0b",
+        borderRadius: 8, padding: "10px 14px", marginBottom: 8,
+        fontSize: 13, color: "#78350f",
+      }}>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>
+          💰 진짜 자금 의미 (종목당 {invStr}씩 분산 투자 가정)
+        </div>
+        <div style={{ display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                      gap: 8, fontSize: 12 }}>
+          <span>총 투자: <b style={{color:"#1e293b"}}>{(invAmt * s.n / 10000).toLocaleString()}만원</b>
+                <span style={{color:"#92400e", fontSize:10}}> ({invStr} × {s.n}건)</span>
+          </span>
+          <span>총 수익: <b style={{color: s.cum > 0 ? "#dc2626" : "#2563eb"}}>{cumKrwStr}</b></span>
+          <span>실제 ROI: <b style={{color: s.avg > 0 ? "#dc2626" : "#2563eb"}}>{(s.avg >= 0 ? "+" : "") + s.avg.toFixed(2)}%</b>
+                <span style={{color:"#92400e", fontSize:10}}> (= 평균 EV)</span>
+          </span>
+        </div>
       </div>
 
       {tpTotal > 0 && (

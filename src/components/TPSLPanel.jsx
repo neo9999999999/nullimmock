@@ -291,10 +291,10 @@ function BestResult(props) {
       <div style={{ display: "grid",
                     gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
                     gap: 6, marginBottom: 6 }}>
-        <Stat label="누적 수익률" value={(b.cum >= 0 ? "+" : "") + b.cum.toFixed(0) + "%"}
-              color={cumColor} sub={fmtKrw(cumKrw)} />
-        <Stat label="평균 EV" value={(b.avg >= 0 ? "+" : "") + b.avg.toFixed(2) + "%"}
-              color={evColor} sub={"건당 " + fmtKrw(evKrw)} />
+        <Stat label="∑ 모든 trade 합%" value={(b.cum >= 0 ? "+" : "") + b.cum.toFixed(0) + "%"}
+              color={cumColor} sub={"비교 지표 (ROI 아님)"} />
+        <Stat label="ROI = 평균 EV" value={(b.avg >= 0 ? "+" : "") + b.avg.toFixed(2) + "%"}
+              color={evColor} sub={"진짜 1건 수익률"} />
         <Stat label="승률" value={b.win.toFixed(1) + "%"} color="#0891b2" />
         <Stat label="평균 익절일" value={b.avgDaysTP > 0 ? b.avgDaysTP.toFixed(1) + "일" : "-"}
               color="#dc2626" />
@@ -303,16 +303,25 @@ function BestResult(props) {
         <Stat label="평균 보유" value={b.days.toFixed(1) + "일"} color="#475569" />
       </div>
 
-      {/* 2행: 종목당 금액 */}
+      {/* 2행: 진짜 자금 의미 */}
       <div style={{
-        background: "#fff", borderRadius: 6, padding: "8px 10px",
-        fontSize: 12, color: "#475569",
-        display: "flex", justifyContent: "space-around", flexWrap: "wrap", gap: 8,
+        background: "#fff", borderRadius: 6, padding: "10px 12px",
+        fontSize: 12, color: "#475569", lineHeight: 1.7,
       }}>
-        <span>📊 종목당 ({fmtKrw(inv).slice(1)}):</span>
-        <span>익절시 <b style={{color:"#dc2626", fontSize: 13}}>{fmtKrw(tpKrw)}</b></span>
-        <span>손절시 <b style={{color:"#2563eb", fontSize: 13}}>{fmtKrw(slKrw)}</b></span>
-        <span>총 <b style={{color: b.n > 0 ? "#dc2626" : "#475569", fontSize: 13}}>{b.n}건</b> {b.cum > 0 ? "→ " + fmtKrw(cumKrw) : ""}</span>
+        <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 4 }}>
+          💰 종목당 <b style={{color:"#1e293b"}}>{fmtKrw(inv).slice(1)}</b>씩 투자했다 가정:
+        </div>
+        <div style={{ display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                      gap: 8, fontSize: 12 }}>
+          <span>총 투자금: <b style={{color:"#1e293b"}}>{fmtKrw(inv * b.n).slice(1)}</b>
+                <span style={{color:"#94a3b8", fontSize:10}}> ({inv.toLocaleString()}원 × {b.n}건)</span>
+          </span>
+          <span>총 수익: <b style={{color: b.cum > 0 ? "#dc2626" : "#2563eb"}}>{fmtKrw(cumKrw)}</b></span>
+          <span>실제 ROI: <b style={{color: b.avg > 0 ? "#dc2626" : "#2563eb"}}>{(b.avg >= 0 ? "+" : "") + b.avg.toFixed(2)}%</b></span>
+          <span>1건 익절시: <b style={{color:"#dc2626"}}>{fmtKrw(tpKrw)}</b></span>
+          <span>1건 손절시: <b style={{color:"#2563eb"}}>{fmtKrw(slKrw)}</b></span>
+        </div>
       </div>
 
       <details style={{ marginTop: 6 }}>
