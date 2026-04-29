@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { gridSearchSingle, gridSearchSplit } from "../lib/simulator.js";
 
 function NumberInput(props) {
@@ -16,13 +16,20 @@ function NumberInput(props) {
 }
 
 const OBJECTIVES = [
-  ["cum", "💰 누적 max", "전체 maxDays 그리드 중 누적 최대"],
+  ["cum", "💰 누적 max", "전체 maxDays 그리드에서 누적 최대"],
   ["cum10", "🔟 10일 max", "보유 10일 고정에서 누적 최대"],
   ["cum20", "🕐 20일 max", "보유 20일 고정에서 누적 최대"],
-  ["bear", "🐻 약세장 max", "22+24년 데이터에서만 누적 최대 (필터 자동 변경)"],
-  ["safety", "🛡️ 안전 max", "안전점수=승률-SL률 최대 + EV+ 필터"],
   ["efficiency", "⚡ 일당효율", "보유일당 EV 최대"],
 ];
+
+function fmtKrw(amt) {
+  if (amt === 0) return "0원";
+  const sign = amt < 0 ? "-" : "+";
+  const abs = Math.abs(amt);
+  if (abs >= 10000000) return sign + (abs / 10000000).toFixed(2) + "천만원";
+  if (abs >= 10000) return sign + Math.round(abs / 10000).toLocaleString() + "만원";
+  return sign + abs.toLocaleString() + "원";
+}
 
 export default function TPSLPanel(props) {
   const [searching, setSearching] = useState(false);
@@ -35,40 +42,25 @@ export default function TPSLPanel(props) {
     props.onChange(next);
   }
 
-  // 정렬 기준 클릭 = 즉시 그리드 + 적용
   function applyObjective(objKey) {
     setActiveObj(objKey);
     setSearching(true);
     setTimeout(function () {
       let realObj = "cum";
       let maxDaysList = [3, 5, 7, 10, 15, 20];
-      let targetTrades = props.trades;
-
-      if (objKey === "cum10") { realObj = "cum"; maxDaysList = [10]; }
-      else if (objKey === "cum20") { realObj = "cum"; maxDaysList = [20]; }
+      if (objKey === "cum10") { maxDaysList = [10]; }
+      else if (objKey === "cum20") { maxDaysList = [20]; }
       else if (objKey === "efficiency") { realObj = "efficiency"; }
-      else if (objKey === "bear") {
-        // 22년 + 24년만 필터링해서 그리드
-        realObj = "cum";
-        targetTrades = (props.allTrades || props.trades).filter(function (t) {
-          const yy = t.refDate.slice(0, 2);
-          return yy === "22" || yy === "24";
-        });
-        // 디폴트 필터(주도주성) 적용
-        targetTrades = targetTrades.filter(function (t) { return t.totalSignals >= 21; });
-      }
-      else if (objKey === "safety") { realObj = "safety"; }
 
-      // 현실적 그리드 (TP500 제거)
-      const tpsR = [10, 15, 20, 25, 30, 50, 70, 100, 150];
-      const slsR = [-3, -5, -7, -10, -15];
+      // 핵심: tradesForGrid (기간 제외) 사용 → 룰을 시간 무관 고정
+      const target = props.tradesForGrid || props.trades;
+      const tps = [10, 15, 20, 25, 30, 50, 70, 100, 150];
+      const sls = [-3, -5, -7, -10, -15];
 
       let result;
       if (props.rule.mode === "single") {
-        result = gridSearchSingle(targetTrades, {
-          tps: tpsR, sls: slsR, maxDaysList: maxDaysList,
-          objective: realObj,
-          minN: objKey === "bear" ? 15 : 30,  // 약세장은 표본 적어서 완화
+        result = gridSearchSingle(target, {
+          tps, sls, maxDaysList, objective: realObj,
         });
         const b = result.best;
         if (b) {
@@ -76,24 +68,13 @@ export default function TPSLPanel(props) {
             tp: b.tp, sl: b.sl, maxDays: b.maxDays,
           }));
         }
-        // 약세장 메뉴는 필터도 자동 변경 (사용자가 결과 보기 쉽게)
-        if (objKey === "bear" && props.onFiltersChange && props.filters) {
-          // 기간을 22년 또는 24년 (둘 다 보려면 일단 24년으로)
-          const newFilters = Object.assign({}, props.filters, {
-            yearRange: "all",
-            fromDate: "22-01-01",
-            toDate: "24-12-31",
-          });
-          props.onFiltersChange(newFilters);
-        }
       } else {
-        result = gridSearchSplit(targetTrades, {
+        result = gridSearchSplit(target, {
           tp1s: [10, 15, 20, 25, 30],
           tp2s: [30, 50, 70, 100, 150],
-          sls: slsR, fsls: [0, 1],
-          maxDaysList: maxDaysList,
+          sls, fsls: [0, 1],
+          maxDaysList,
           objective: realObj,
-          minN: objKey === "bear" ? 15 : 30,
         });
         const b = result.best;
         if (b) {
@@ -108,7 +89,6 @@ export default function TPSLPanel(props) {
   }
 
   function applyPreset() {
-    // 1차 백테스트 최강 디폴트 (필터 OPTIMAL과 매칭)
     props.onChange(Object.assign({}, props.rule, {
       mode: "single", tp: 100, sl: -10, maxDays: 10,
     }));
@@ -116,11 +96,14 @@ export default function TPSLPanel(props) {
     setActiveObj(null);
   }
 
+  const investAmt = props.investAmt != null ? props.investAmt : 500000;
+
   return (
     <div style={{
       marginBottom: 16, padding: 14, background: "#fff",
       border: "1px solid #e2e8f0", borderRadius: 12,
     }}>
+      {/* 룰 입력 행 */}
       <div style={{ display: "flex", alignItems: "center", gap: 12,
                     flexWrap: "wrap", marginBottom: 10 }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
@@ -177,18 +160,18 @@ export default function TPSLPanel(props) {
                   borderRadius: 6, padding: "5px 14px", fontSize: 12,
                   cursor: "pointer", fontWeight: 700,
                 }}>
-          ⭐ 최강 디폴트 (TP100/SL-10/10일)
+          ⭐ 디폴트 (TP100/SL-10/10일)
         </button>
       </div>
 
-      {/* 자동 최적화 — 클릭 즉시 적용 */}
+      {/* 자동 최적화 */}
       <div style={{
         background: "#f8fafc", borderRadius: 8, padding: 10,
         display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
         marginBottom: bestInfo ? 8 : 0,
       }}>
         <span style={{ fontSize: 12, fontWeight: 700, color: "#475569" }}>
-          🔍 자동 최적화 (클릭 즉시 적용):
+          🔍 자동 최적화 (시간 무관 고정 룰):
         </span>
         {OBJECTIVES.map(function (o) {
           const active = activeObj === o[0];
@@ -208,15 +191,46 @@ export default function TPSLPanel(props) {
         })}
       </div>
 
+      {/* 투자금 입력 */}
+      <div style={{
+        background: "#fef3c7", border: "1px solid #fde047",
+        borderRadius: 8, padding: "8px 12px",
+        display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+        marginTop: 8, marginBottom: bestInfo ? 8 : 0,
+      }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#78350f" }}>
+          💵 종목당 투자금:
+        </span>
+        <input type="number" value={investAmt} step="100000" min="0"
+               onChange={function (e) {
+                 const v = parseInt(e.target.value, 10);
+                 if (props.setInvestAmt && !isNaN(v)) props.setInvestAmt(Math.max(0, v));
+               }}
+               style={{
+                 width: 130, padding: "4px 8px", fontSize: 14,
+                 border: "1px solid #fbbf24", borderRadius: 4,
+                 textAlign: "right", fontWeight: 700,
+               }} />
+        <span style={{ fontSize: 12, color: "#78350f" }}>원</span>
+
+        <span style={{ color: "#fbbf24", margin: "0 4px" }}>·</span>
+
+        {/* 룰 기반 종목당 익절/손절금 */}
+        <span style={{ fontSize: 11, color: "#78350f" }}>
+          익절시 <b style={{color:"#dc2626"}}>{fmtKrw(Math.round(investAmt * (props.rule.tp || 0) / 100))}</b>
+          {" / "}
+          손절시 <b style={{color:"#2563eb"}}>{fmtKrw(Math.round(investAmt * (props.rule.sl || 0) / 100))}</b>
+        </span>
+      </div>
+
       {bestInfo && bestInfo.result && bestInfo.result.best && (
-        <BestResult bestInfo={bestInfo} mode={props.rule.mode} />
+        <BestResult bestInfo={bestInfo} mode={props.rule.mode}
+                    investAmt={investAmt} />
       )}
 
-      <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>
-        진입: 그날 종가 (15:20 KST 시장가) /{" "}
-        {props.rule.mode === "single"
-          ? "TP 또는 SL 도달 시 즉시 청산. 만료 시 종가 청산."
-          : "TP1 절반 → TP2 잔량. fSL ON이면 TP1 후 본전 보장."}
+      <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 8 }}>
+        매수: 진입일 종가 (15:20 KST 시장가) · 매도: <b>TP/SL % 도달 즉시</b> · 만료 시 종가
+        {props.rule.mode === "split" && " · 분할: TP1 절반 → TP2 잔량, fSL ON이면 TP1 후 본전 보장"}
       </div>
     </div>
   );
@@ -227,9 +241,16 @@ function BestResult(props) {
   const top5 = props.bestInfo.result.top5;
   const obj = props.bestInfo.objective;
   const mode = props.mode;
+  const inv = props.investAmt;
 
-  const evColor = b.avg > 0 ? "#dc2626" : "#2563eb";
   const cumColor = b.cum > 0 ? "#dc2626" : "#2563eb";
+  const evColor = b.avg > 0 ? "#dc2626" : "#2563eb";
+
+  // 룰 기반 종목당 금액
+  const tpKrw = Math.round(inv * (mode === "single" ? b.tp : (b.tp1 + b.tp2) / 2) / 100);
+  const slKrw = Math.round(inv * b.sl / 100);
+  const evKrw = Math.round(inv * b.avg / 100);
+  const cumKrw = Math.round(inv * b.cum / 100);
 
   return (
     <div style={{
@@ -243,27 +264,40 @@ function BestResult(props) {
           ? "TP+" + b.tp + " / SL" + b.sl + " / 보유 " + b.maxDays + "일"
           : "TP1+" + b.tp1 + " / TP2+" + b.tp2 + " / SL" + b.sl
             + " / fSL " + (b.fsl ? "ON" : "OFF") + " / 보유 " + b.maxDays + "일"}
+        <span style={{ marginLeft: 8, color: "#64748b", fontSize: 11, fontWeight: 400 }}>
+          (전체 {b.n}건 기준 · 시간 무관 고정)
+        </span>
       </div>
 
+      {/* 1행: % 통계 */}
       <div style={{ display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(95px, 1fr))",
-                    gap: 6, marginBottom: 8 }}>
-        <Stat label="누적" value={(b.cum >= 0 ? "+" : "") + b.cum.toFixed(0) + "%"}
-              color={cumColor} />
-        <Stat label="EV" value={(b.avg >= 0 ? "+" : "") + b.avg.toFixed(2) + "%"}
-              color={evColor} />
+                    gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
+                    gap: 6, marginBottom: 6 }}>
+        <Stat label="누적 수익률" value={(b.cum >= 0 ? "+" : "") + b.cum.toFixed(0) + "%"}
+              color={cumColor} sub={fmtKrw(cumKrw)} />
+        <Stat label="평균 EV" value={(b.avg >= 0 ? "+" : "") + b.avg.toFixed(2) + "%"}
+              color={evColor} sub={"건당 " + fmtKrw(evKrw)} />
         <Stat label="승률" value={b.win.toFixed(1) + "%"} color="#0891b2" />
-        <Stat label="평균익절" value={b.avgDaysTP > 0 ? b.avgDaysTP.toFixed(1) + "일" : "-"}
+        <Stat label="평균 익절일" value={b.avgDaysTP > 0 ? b.avgDaysTP.toFixed(1) + "일" : "-"}
               color="#dc2626" />
-        <Stat label="평균손절" value={b.avgDaysSL > 0 ? b.avgDaysSL.toFixed(1) + "일" : "-"}
+        <Stat label="평균 손절일" value={b.avgDaysSL > 0 ? b.avgDaysSL.toFixed(1) + "일" : "-"}
               color="#2563eb" />
-        <Stat label="평균보유" value={b.days.toFixed(1) + "일"} color="#475569" />
-        <Stat label="일당EV" value={b.efficiency != null
-          ? (b.efficiency >= 0 ? "+" : "") + b.efficiency.toFixed(2) + "%/d"
-          : "-"} color={(b.efficiency || 0) > 0 ? "#dc2626" : "#2563eb"} />
+        <Stat label="평균 보유" value={b.days.toFixed(1) + "일"} color="#475569" />
       </div>
 
-      <details>
+      {/* 2행: 종목당 금액 */}
+      <div style={{
+        background: "#fff", borderRadius: 6, padding: "8px 10px",
+        fontSize: 12, color: "#475569",
+        display: "flex", justifyContent: "space-around", flexWrap: "wrap", gap: 8,
+      }}>
+        <span>📊 종목당 ({fmtKrw(inv).slice(1)}):</span>
+        <span>익절시 <b style={{color:"#dc2626", fontSize: 13}}>{fmtKrw(tpKrw)}</b></span>
+        <span>손절시 <b style={{color:"#2563eb", fontSize: 13}}>{fmtKrw(slKrw)}</b></span>
+        <span>총 <b style={{color: b.n > 0 ? "#dc2626" : "#475569", fontSize: 13}}>{b.n}건</b> {b.cum > 0 ? "→ " + fmtKrw(cumKrw) : ""}</span>
+      </div>
+
+      <details style={{ marginTop: 6 }}>
         <summary style={{ fontSize: 11, color: "#475569", cursor: "pointer",
                           userSelect: "none", fontWeight: 600 }}>
           🏆 TOP 5 후보 보기
@@ -279,7 +313,7 @@ function BestResult(props) {
                 padding: "3px 6px", background: i === 0 ? "#fef3c7" : "transparent",
                 borderRadius: 4, gap: 8,
               }}>
-                <span style={{ fontWeight: i === 0 ? 700 : 400, minWidth: 130 }}>
+                <span style={{ fontWeight: i === 0 ? 700 : 400, minWidth: 140 }}>
                   {i + 1}. {cfg}
                 </span>
                 <span style={{ color: r.cum > 0 ? "#dc2626" : "#2563eb",
@@ -303,9 +337,14 @@ function Stat(props) {
     <div style={{ background: "#fff", borderRadius: 6, padding: "5px 8px",
                   border: "1px solid #e2e8f0" }}>
       <div style={{ fontSize: 9, color: "#94a3b8" }}>{props.label}</div>
-      <div style={{ fontSize: 13, fontWeight: 800, color: props.color }}>
+      <div style={{ fontSize: 14, fontWeight: 800, color: props.color }}>
         {props.value}
       </div>
+      {props.sub && (
+        <div style={{ fontSize: 9, color: "#64748b", marginTop: 1 }}>
+          {props.sub}
+        </div>
+      )}
     </div>
   );
 }

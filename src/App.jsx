@@ -35,7 +35,15 @@ export default function App() {
   const [openIdx, setOpenIdx] = useState(null);
   const [investAmt, setInvestAmt] = useState(500000);  // 투자금 (디폴트 50만원)
 
-  // 필터링된 트레이드
+  // 기간 제외하고 필터 적용한 trades (자동 최적화용 — 룰을 시간 무관 고정)
+  const tradesForGrid = useMemo(function () {
+    const f = Object.assign({}, filters, {
+      yearRange: "all", fromDate: "", toDate: "",
+    });
+    return applyFilters(tradesData, f);
+  }, [filters]);
+
+  // 필터링된 트레이드 (기간 포함 — 통계 표시용)
   const filtered = useMemo(function () {
     return applyFilters(tradesData, filters);
   }, [filters]);
@@ -112,14 +120,14 @@ export default function App() {
                    filteredCount={filtered.length} />
 
         {/* TP/SL 패널 */}
-        <TPSLPanel rule={rule} onChange={handleRuleChange} trades={filtered}
-                   allTrades={tradesData}
-                   filters={filters}
-                   onFiltersChange={function (f) { setFilters(f); setPage(0); }} />
+        <TPSLPanel rule={rule} onChange={handleRuleChange}
+                   trades={filtered}
+                   tradesForGrid={tradesForGrid}
+                   investAmt={investAmt} setInvestAmt={setInvestAmt} />
 
         {/* 통계 카드 */}
         <StatsCards stats={stats} rule={rule}
-                    investAmt={investAmt} setInvestAmt={setInvestAmt} />
+                    investAmt={investAmt} />
 
         {/* 연도/월별 분석 */}
         <YearMonthBreakdown trades={filtered} rule={rule} />

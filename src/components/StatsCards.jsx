@@ -59,28 +59,10 @@ export default function StatsCards(props) {
         background: "#fffbeb", border: "1px solid #fde68a",
         borderRadius: 8, padding: "8px 12px", marginBottom: 8,
         fontSize: 11, color: "#78350f",
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        gap: 12, flexWrap: "wrap",
       }}>
-        <span>
-          💡 매수: <b>진입일 15:20 시장가</b> (≈종가) ·
-          매도: TP/SL 즉시 / 만료 시 종가
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <b>종목당 투자금:</b>
-          <input type="number" value={invAmt}
-                 step="100000"
-                 onChange={function (e) {
-                   const v = parseInt(e.target.value, 10);
-                   if (props.setInvestAmt && !isNaN(v)) props.setInvestAmt(Math.max(0, v));
-                 }}
-                 style={{
-                   width: 110, padding: "3px 6px", fontSize: 13,
-                   border: "1px solid #fbbf24", borderRadius: 4,
-                   textAlign: "right", fontWeight: 700,
-                 }} />
-          <span>원</span>
-        </span>
+        💡 매수: <b>진입일 15:20 시장가</b> (≈ 종가) ·
+        매도: <b>TP/SL % 도달 즉시 매도</b> · 만료 시 종가 청산 ·
+        종목당 투자금 <b>{invStr}</b> 가정
       </div>
 
       <div style={{ display: "grid",
