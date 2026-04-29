@@ -224,6 +224,7 @@ export default function TPSLPanel(props) {
 
       {bestInfo && bestInfo.result && bestInfo.result.best && (
         <BestResult bestInfo={bestInfo} mode={props.rule.mode}
+                    rule={props.rule}
                     investAmt={investAmt} />
       )}
 
@@ -245,9 +246,14 @@ function BestResult(props) {
   const cumColor = b.cum > 0 ? "#dc2626" : "#2563eb";
   const evColor = b.avg > 0 ? "#dc2626" : "#2563eb";
 
+  // 룰 직접 사용 (b.tp/sl은 통계 비율과 충돌 가능)
+  const ruleTP = mode === "single" ? props.rule.tp : (props.rule.tp1 + props.rule.tp2) / 2;
+  const ruleSL = props.rule.sl;
+  const ruleMaxDays = props.rule.maxDays;
+
   // 룰 기반 종목당 금액
-  const tpKrw = Math.round(inv * (mode === "single" ? b.tp : (b.tp1 + b.tp2) / 2) / 100);
-  const slKrw = Math.round(inv * b.sl / 100);
+  const tpKrw = Math.round(inv * ruleTP / 100);
+  const slKrw = Math.round(inv * ruleSL / 100);
   const evKrw = Math.round(inv * b.avg / 100);
   const cumKrw = Math.round(inv * b.cum / 100);
 
@@ -260,9 +266,9 @@ function BestResult(props) {
       <div style={{ fontSize: 12, color: b.cum > 0 ? "#1e40af" : "#991b1b",
                     fontWeight: 700, marginBottom: 8 }}>
         ✓ 적용됨: {mode === "single"
-          ? "TP+" + b.tp + " / SL" + b.sl + " / 보유 " + b.maxDays + "일"
-          : "TP1+" + b.tp1 + " / TP2+" + b.tp2 + " / SL" + b.sl
-            + " / fSL " + (b.fsl ? "ON" : "OFF") + " / 보유 " + b.maxDays + "일"}
+          ? "TP+" + props.rule.tp + " / SL" + props.rule.sl + " / 보유 " + ruleMaxDays + "일"
+          : "TP1+" + props.rule.tp1 + " / TP2+" + props.rule.tp2 + " / SL" + props.rule.sl
+            + " / fSL " + (props.rule.fsl ? "ON" : "OFF") + " / 보유 " + ruleMaxDays + "일"}
         <span style={{ marginLeft: 8, color: "#64748b", fontSize: 11, fontWeight: 400 }}>
           (전체 {b.n}건 기준 · 시간 무관 고정)
         </span>

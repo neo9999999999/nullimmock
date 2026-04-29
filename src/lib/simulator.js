@@ -147,8 +147,15 @@ export function gridSearchSingle(trades, opts) {
         const r = aggregateStats(trades, { mode: "single", tp, sl, maxDays: md });
         if (r.n < minN) continue;
         const m = metricFor(r, objective);
-        // r 먼저 spread, 우리 값들 마지막에 (r.tp/sl 비율과 충돌 방지)
-        results.push(Object.assign({}, r, { tp, sl, maxDays: md, _metric: m }));
+        // 명시적 덮어쓰기 (r.tp/r.sl 비율 충돌 방지)
+        const row = Object.assign({}, r);
+        row.tp = tp;        // 임계치
+        row.sl = sl;        // 임계치
+        row.maxDays = md;
+        row._metric = m;
+        row.tpRate = (r.tp || 0);  // 비율 별도 보관
+        row.slRate = (r.sl || 0);
+        results.push(row);
       }
     }
   }
@@ -180,7 +187,15 @@ export function gridSearchSplit(trades, opts) {
             const r = aggregateStats(trades, { mode: "split", tp1, tp2, sl, fsl, maxDays: md });
             if (r.n < minN) continue;
             const m = metricFor(r, objective);
-            results.push(Object.assign({}, r, { tp1, tp2, sl, fsl, maxDays: md, _metric: m }));
+            const row = Object.assign({}, r);
+            row.tp1 = tp1;
+            row.tp2 = tp2;
+            row.sl = sl;     // 임계치 (r.sl 비율 덮어씀)
+            row.fsl = fsl;
+            row.maxDays = md;
+            row._metric = m;
+            row.slRate = (r.sl || 0);
+            results.push(row);
           }
         }
       }
