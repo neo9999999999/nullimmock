@@ -6,6 +6,7 @@ import StatsCards from "./components/StatsCards.jsx";
 import TradesTable from "./components/TradesTable.jsx";
 import YearMonthBreakdown from "./components/YearMonthBreakdown.jsx";
 import GuideModal from "./components/GuideModal.jsx";
+import TodaySignals from "./components/TodaySignals.jsx";
 import { DEFAULT_FILTERS, applyFilters, sortTrades } from "./lib/filters.js";
 import { aggregateStats, simulate } from "./lib/simulator.js";
 
@@ -115,6 +116,9 @@ export default function App() {
       </div>
 
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: 16 }}>
+        {/* 🎯 골든 룰 — 최근 진입 신호 */}
+        <TodaySignals allTrades={tradesData} rule={rule} investAmt={investAmt} />
+
         {/* 필터 바 */}
         <FilterBar filters={filters} onChange={function (f) { setFilters(f); setPage(0); }}
                    onReset={handleFilterReset} totalCount={tradesData.length}
