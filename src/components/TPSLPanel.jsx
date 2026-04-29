@@ -16,10 +16,15 @@ function NumberInput(props) {
 }
 
 const OBJECTIVES = [
-  ["cum", "💰 누적 max", "전체 maxDays 그리드에서 누적 최대"],
-  ["cum10", "🔟 10일 max", "보유 10일 고정에서 누적 최대"],
-  ["cum20", "🕐 20일 max", "보유 20일 고정에서 누적 최대"],
   ["efficiency", "⚡ 일당효율", "보유일당 EV 최대"],
+  ["cum", "💰 전체 누적", "모든 maxDays 그리드 중 누적 최대"],
+  ["cum5", "5일 max", "보유 5일 고정에서 누적 최대"],
+  ["cum10", "10일 max", "보유 10일 고정에서 누적 최대"],
+  ["cum15", "15일 max", "보유 15일 고정에서 누적 최대"],
+  ["cum20", "20일 max", "보유 20일 고정에서 누적 최대"],
+  ["cum25", "25일 max", "보유 25일 고정에서 누적 최대"],
+  ["cum30", "30일 max", "보유 30일 고정에서 누적 최대"],
+  ["cum60", "60일 max", "보유 60일 고정에서 누적 최대"],
 ];
 
 function fmtKrw(amt) {
@@ -47,9 +52,14 @@ export default function TPSLPanel(props) {
     setSearching(true);
     setTimeout(function () {
       let realObj = "cum";
-      let maxDaysList = [3, 5, 7, 10, 15, 20];
-      if (objKey === "cum10") { maxDaysList = [10]; }
+      let maxDaysList = [3, 5, 7, 10, 15, 20, 25, 30, 60];
+      if (objKey === "cum5") { maxDaysList = [5]; }
+      else if (objKey === "cum10") { maxDaysList = [10]; }
+      else if (objKey === "cum15") { maxDaysList = [15]; }
       else if (objKey === "cum20") { maxDaysList = [20]; }
+      else if (objKey === "cum25") { maxDaysList = [25]; }
+      else if (objKey === "cum30") { maxDaysList = [30]; }
+      else if (objKey === "cum60") { maxDaysList = [60]; }
       else if (objKey === "efficiency") { realObj = "efficiency"; }
 
       // 핵심: tradesForGrid (기간 제외) 사용 → 룰을 시간 무관 고정
