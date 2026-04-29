@@ -9,19 +9,26 @@ import GuideModal from "./components/GuideModal.jsx";
 import { DEFAULT_FILTERS, applyFilters, sortTrades } from "./lib/filters.js";
 import { aggregateStats, simulate } from "./lib/simulator.js";
 
-// 디폴트 매매 룰 (1차 백테스트 결과)
+// 디폴트 필터 — 1차 백테스트 최강 콤보 (n=203, 누적+1247%, 승률 33%)
+const OPTIMAL_FILTERS = Object.assign({}, DEFAULT_FILTERS, {
+  signalsRange: "21+",      // 슈퍼주도주만 (6년 21회+)
+  pattern: "ma5_breakout",  // 5일선 돌파만 (가장 강력)
+  monthExcluded: [6, 7],    // 6, 7월 제외 (계절성)
+});
+
+// 디폴트 매매 룰 — 같은 셋의 최적 TP/SL/maxDays
 const DEFAULT_RULE = {
-  mode: "single",   // "single" | "split"
-  tp: 70,
+  mode: "single",
+  tp: 100,
   sl: -10,
   tp1: 30,
   tp2: 70,
-  fsl: 1,           // 본전 보장 ON
-  maxDays: 20,
+  fsl: 1,
+  maxDays: 10,
 };
 
 export default function App() {
-  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState(OPTIMAL_FILTERS);
   const [rule, setRule] = useState(DEFAULT_RULE);
   const [sort, setSort] = useState({ key: "refDate", dir: "desc" });
   const [page, setPage] = useState(0);
@@ -55,7 +62,7 @@ export default function App() {
   }, [filtered, rule]);
 
   function handleFilterReset() {
-    setFilters(DEFAULT_FILTERS);
+    setFilters(OPTIMAL_FILTERS);
     setPage(0);
   }
 
@@ -89,7 +96,8 @@ export default function App() {
               🎯 주도주 눌림매매 백테스트
             </h1>
             <p style={{ margin: "4px 0 0", fontSize: 12, color: "#94a3b8" }}>
-              6년치 데이터 (2021~2026.04) · {tradesData.length}개 진입 trades · 필터/TP·SL 슬라이더로 실시간 시뮬
+              디폴트: <b style={{color:"#fbbf24"}}>21회+ × 5일선돌파 × 6/7월 제외 × TP100/SL-10/10일</b>
+              {" "}→ 누적 +1247% · 승률 33% · 평균 익절 6.3일 (n=203)
             </p>
           </div>
           <GuideModal />
