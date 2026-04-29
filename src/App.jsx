@@ -33,6 +33,7 @@ export default function App() {
   const [sort, setSort] = useState({ key: "refDate", dir: "desc" });
   const [page, setPage] = useState(0);
   const [openIdx, setOpenIdx] = useState(null);
+  const [investAmt, setInvestAmt] = useState(500000);  // 투자금 (디폴트 50만원)
 
   // 필터링된 트레이드
   const filtered = useMemo(function () {
@@ -111,10 +112,14 @@ export default function App() {
                    filteredCount={filtered.length} />
 
         {/* TP/SL 패널 */}
-        <TPSLPanel rule={rule} onChange={handleRuleChange} trades={filtered} />
+        <TPSLPanel rule={rule} onChange={handleRuleChange} trades={filtered}
+                   allTrades={tradesData}
+                   filters={filters}
+                   onFiltersChange={function (f) { setFilters(f); setPage(0); }} />
 
         {/* 통계 카드 */}
-        <StatsCards stats={stats} rule={rule} />
+        <StatsCards stats={stats} rule={rule}
+                    investAmt={investAmt} setInvestAmt={setInvestAmt} />
 
         {/* 연도/월별 분석 */}
         <YearMonthBreakdown trades={filtered} rule={rule} />
@@ -123,7 +128,8 @@ export default function App() {
         <TradesTable trades={sorted} sort={sort} onSort={handleSort}
                      page={page} setPage={setPage}
                      openIdx={openIdx} setOpenIdx={setOpenIdx}
-                     rule={rule} />
+                     rule={rule}
+                     investAmt={investAmt} />
 
         {/* 푸터 */}
         <div style={{ textAlign: "center", padding: "24px 0",

@@ -32,6 +32,16 @@ function formatEntryDate(t) {
   return d.slice(2, 4) + "-" + d.slice(4, 6) + "-" + d.slice(6, 8);
 }
 
+// 원화 금액을 만원 단위로 간결히
+function formatKrw(amt) {
+  if (amt === 0) return "0";
+  const sign = amt < 0 ? "-" : "+";
+  const abs = Math.abs(amt);
+  if (abs >= 10000000) return sign + (abs / 10000000).toFixed(1) + "천만";
+  if (abs >= 10000) return sign + (abs / 10000).toFixed(0) + "만";
+  return sign + abs.toLocaleString();
+}
+
 export default function TradesTable(props) {
   const trades = props.trades;
   const total = trades.length;
@@ -93,6 +103,12 @@ export default function TradesTable(props) {
               {header("daysAfter", "D후", 50)}
               {header("entryPct", "진입가%", 70)}
               {header("pnl", "결과", 80)}
+              <th style={{
+                padding: "10px 6px", fontWeight: 700, color: "#475569",
+                fontSize: 11, textAlign: "center",
+                borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap",
+                width: 90,
+              }}>수익금</th>
             </tr>
           </thead>
           <tbody>
@@ -155,6 +171,11 @@ export default function TradesTable(props) {
                         {t.result} ({t.days}d)
                       </div>
                     </td>
+                    <td style={Object.assign({}, cell(), {
+                      color: pnlColor, fontWeight: 700, fontSize: 12,
+                    })}>
+                      {formatKrw(Math.round((props.investAmt || 500000) * t.pnl / 100))}
+                    </td>
                   </tr>
 
                   {isOpen && <DetailRow trade={t} rule={props.rule} />}
@@ -207,7 +228,7 @@ function DetailRow(props) {
   const first10 = arr.slice(0, 10);
   return (
     <tr>
-      <td colSpan={13} style={{ padding: 0 }}>
+      <td colSpan={14} style={{ padding: 0 }}>
         <div style={{ padding: 14, background: "#fffbeb",
                       borderBottom: "2px solid #fcd34d" }}>
           <div style={{ display: "grid",

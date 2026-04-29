@@ -19,8 +19,9 @@ const OBJECTIVES = [
   ["cum", "💰 누적 max", "전체 maxDays 그리드 중 누적 최대"],
   ["cum10", "🔟 10일 max", "보유 10일 고정에서 누적 최대"],
   ["cum20", "🕐 20일 max", "보유 20일 고정에서 누적 최대"],
+  ["bear", "🐻 약세장 max", "22+24년 데이터에서만 누적 최대 (필터 자동 변경)"],
+  ["safety", "🛡️ 안전 max", "안전점수=승률-SL률 최대 + EV+ 필터"],
   ["efficiency", "⚡ 일당효율", "보유일당 EV 최대"],
-  ["ev", "📈 평균EV", "건당 기댓값 최대"],
 ];
 
 export default function TPSLPanel(props) {
@@ -39,20 +40,35 @@ export default function TPSLPanel(props) {
     setActiveObj(objKey);
     setSearching(true);
     setTimeout(function () {
-      // cum10/cum20는 maxDays 고정 + 누적 최대
-      let realObj = objKey;
+      let realObj = "cum";
       let maxDaysList = [3, 5, 7, 10, 15, 20];
+      let targetTrades = props.trades;
+
       if (objKey === "cum10") { realObj = "cum"; maxDaysList = [10]; }
       else if (objKey === "cum20") { realObj = "cum"; maxDaysList = [20]; }
+      else if (objKey === "efficiency") { realObj = "efficiency"; }
+      else if (objKey === "bear") {
+        // 22년 + 24년만 필터링해서 그리드
+        realObj = "cum";
+        targetTrades = (props.allTrades || props.trades).filter(function (t) {
+          const yy = t.refDate.slice(0, 2);
+          return yy === "22" || yy === "24";
+        });
+        // 디폴트 필터(주도주성) 적용
+        targetTrades = targetTrades.filter(function (t) { return t.totalSignals >= 21; });
+      }
+      else if (objKey === "safety") { realObj = "safety"; }
+
+      // 현실적 그리드 (TP500 제거)
+      const tpsR = [10, 15, 20, 25, 30, 50, 70, 100, 150];
+      const slsR = [-3, -5, -7, -10, -15];
 
       let result;
       if (props.rule.mode === "single") {
-        result = gridSearchSingle(props.trades, {
-          // 더 공격적 TP/SL 그리드
-          tps: [30, 50, 70, 100, 150, 200, 300, 500],
-          sls: [-5, -7, -10, -15, -20, -25],
-          maxDaysList: maxDaysList,
+        result = gridSearchSingle(targetTrades, {
+          tps: tpsR, sls: slsR, maxDaysList: maxDaysList,
           objective: realObj,
+          minN: objKey === "bear" ? 15 : 30,  // 약세장은 표본 적어서 완화
         });
         const b = result.best;
         if (b) {
@@ -60,14 +76,24 @@ export default function TPSLPanel(props) {
             tp: b.tp, sl: b.sl, maxDays: b.maxDays,
           }));
         }
+        // 약세장 메뉴는 필터도 자동 변경 (사용자가 결과 보기 쉽게)
+        if (objKey === "bear" && props.onFiltersChange && props.filters) {
+          // 기간을 22년 또는 24년 (둘 다 보려면 일단 24년으로)
+          const newFilters = Object.assign({}, props.filters, {
+            yearRange: "all",
+            fromDate: "22-01-01",
+            toDate: "24-12-31",
+          });
+          props.onFiltersChange(newFilters);
+        }
       } else {
-        result = gridSearchSplit(props.trades, {
-          tp1s: [20, 30, 50, 70],
-          tp2s: [50, 100, 150, 200, 300, 500],
-          sls: [-5, -7, -10, -15, -20],
-          fsls: [0, 1],
+        result = gridSearchSplit(targetTrades, {
+          tp1s: [10, 15, 20, 25, 30],
+          tp2s: [30, 50, 70, 100, 150],
+          sls: slsR, fsls: [0, 1],
           maxDaysList: maxDaysList,
           objective: realObj,
+          minN: objKey === "bear" ? 15 : 30,
         });
         const b = result.best;
         if (b) {

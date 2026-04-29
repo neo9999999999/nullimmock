@@ -116,7 +116,7 @@ function emptyStats() {
   };
 }
 
-// objective: cum / efficiency / ev / winrate
+// objective: cum / efficiency / ev / winrate / safety
 function metricFor(r, objective) {
   if (objective === "cum") return r.cum;
   if (objective === "efficiency") {
@@ -125,6 +125,11 @@ function metricFor(r, objective) {
   }
   if (objective === "ev") return r.avg;
   if (objective === "winrate") return r.win;
+  if (objective === "safety") {
+    // 안전점수 = (승률 - SL률). 단 EV 양수일 때만 의미 있음
+    if (r.avg <= 0) return -9999;
+    return r.win - r.sl;
+  }
   return r.cum;
 }
 
