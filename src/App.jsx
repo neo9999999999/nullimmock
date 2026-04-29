@@ -4,9 +4,12 @@ import {
   extractAllDays, fmtDate, gapStats, byStock,
   prevPnlDistribution, bySuperLevel, simBuyYesterday,
 } from "./gap.js";
+import SimilarSearch from "./SimilarSearch.jsx";
 
 export default function App() {
-  // 필터 상태
+  const [tab, setTab] = useState("gap");  // 'gap' | 'similar'
+
+  // 필터 상태 (gap 탭용)
   const [threshold, setThreshold] = useState(3);
   const [prevBullOnly, setPrevBullOnly] = useState(true);  // 어제 양봉만
   const [ivFilter, setIvFilter] = useState("foreign");     // all / foreign / instOnly / foreignOnly / both / negative
@@ -110,7 +113,7 @@ export default function App() {
     }}>
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
         {/* 헤더 */}
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 16 }}>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#10b981" }}>
             🎯 갭상승 종목 발굴
           </h1>
@@ -120,6 +123,22 @@ export default function App() {
           </p>
         </div>
 
+        {/* 탭 */}
+        <div style={{
+          display: "flex", gap: 4, marginBottom: 16,
+          borderBottom: "1px solid #334155",
+        }}>
+          <TabBtn active={tab === "gap"} onClick={() => setTab("gap")}
+                  label="📊 갭상승 분석" />
+          <TabBtn active={tab === "similar"} onClick={() => setTab("similar")}
+                  label="🔍 유사 종목 검색" />
+        </div>
+
+        {/* 탭 컨텐츠: 유사 검색 */}
+        {tab === "similar" && <SimilarSearch />}
+
+        {/* 탭 컨텐츠: 갭 분석 */}
+        {tab === "gap" && (<>
         {/* 필터 박스 */}
         <div style={{
           marginBottom: 16, padding: 14,
@@ -385,13 +404,32 @@ export default function App() {
           </div>
         )}
 
+        {tab === "gap" && (
         <div style={{ textAlign: "center", color: "#475569", fontSize: 11,
                       marginTop: 20, paddingBottom: 20 }}>
           데이터: {tradesData.length}건 trade × 평균 보유 = 일봉 {allDays.length.toLocaleString()}건 ·
           기간: 2021.01 ~ 2026.04
         </div>
+        )}
+        </>)}
       </div>
     </div>
+  );
+}
+
+function TabBtn({ active, onClick, label }) {
+  return (
+    <button onClick={onClick}
+      style={{
+        background: active ? "#10b981" : "transparent",
+        color: active ? "#fff" : "#94a3b8",
+        border: "none",
+        borderBottom: active ? "3px solid #10b981" : "3px solid transparent",
+        padding: "10px 20px", fontSize: 13, fontWeight: 700,
+        cursor: "pointer", marginBottom: -1,
+      }}>
+      {label}
+    </button>
   );
 }
 
