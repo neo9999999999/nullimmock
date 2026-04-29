@@ -24,6 +24,14 @@ const resultColor = function (r) {
   return "#64748b";
 };
 
+// trades.json에 entryDate 필드가 있으면 사용 (정확). 없으면 ohlc[0]의 -1일 추정.
+function formatEntryDate(t) {
+  if (t.entryDate) return t.entryDate;
+  if (!t.ohlc || t.ohlc.length === 0) return "-";
+  const d = t.ohlc[0][0];
+  return d.slice(2, 4) + "-" + d.slice(4, 6) + "-" + d.slice(6, 8);
+}
+
 export default function TradesTable(props) {
   const trades = props.trades;
   const total = trades.length;
@@ -73,6 +81,7 @@ export default function TradesTable(props) {
           <thead>
             <tr>
               {header("refDate", "시그널일")}
+              {header("entryDateStr", "진입일", 90)}
               {header("name", "종목")}
               {header("market", "시장", 60)}
               {header("totalSignals", "6년", 50)}
@@ -100,6 +109,9 @@ export default function TradesTable(props) {
                         background: isOpen ? "#fffbeb" : "#fff",
                       }}>
                     <td style={cell()}>{t.refDate}</td>
+                    <td style={Object.assign({}, cell(), { color: "#0891b2", fontWeight: 600 })}>
+                      {formatEntryDate(t)}
+                    </td>
                     <td style={Object.assign({}, cell(), { fontWeight: 700,
                                                             textAlign: "left",
                                                             paddingLeft: 8 })}>
@@ -195,7 +207,7 @@ function DetailRow(props) {
   const first10 = arr.slice(0, 10);
   return (
     <tr>
-      <td colSpan={12} style={{ padding: 0 }}>
+      <td colSpan={13} style={{ padding: 0 }}>
         <div style={{ padding: 14, background: "#fffbeb",
                       borderBottom: "2px solid #fcd34d" }}>
           <div style={{ display: "grid",
