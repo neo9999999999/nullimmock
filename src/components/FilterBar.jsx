@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 
 const COLORS = {
   bg: "#0f1420",
@@ -94,7 +94,33 @@ function MultiToggle(props) {
   );
 }
 
+// 적용된 필터를 짧은 요약 문구로 변환
+function summaryFilters(f) {
+  const parts = [];
+  if (f.yearRange !== "all") parts.push(f.yearRange + "년");
+  else if (f.fromDate || f.toDate) {
+    parts.push((f.fromDate || "처음") + "~" + (f.toDate || "끝"));
+  }
+  if (f.signalsRange !== "all") parts.push(f.signalsRange);
+  if (f.iv !== "all") parts.push("수급 " + f.iv);
+  if (f.high === "h120") parts.push("120일↑");
+  else if (f.high === "h60only") parts.push("60일만");
+  else if (f.high === "none") parts.push("신고가X");
+  if (f.pattern === "ma5_breakout") parts.push("5일선돌파");
+  else if (f.pattern === "ma5_support") parts.push("5일선지지");
+  else if (f.pattern === "ma20_rebound") parts.push("20일선반등");
+  if (f.market !== "all") parts.push(f.market);
+  if (f.changeRange !== "all") parts.push("등락 " + f.changeRange);
+  if (f.amountRange !== "all") parts.push("거래대금 " + f.amountRange);
+  if (f.monthExcluded && f.monthExcluded.length > 0) {
+    parts.push(f.monthExcluded.join(",") + "월제외");
+  }
+  return parts.length === 0 ? "전체 (필터 없음)" : parts.join(" · ");
+}
+
 export default function FilterBar(props) {
+  const [isOpen, setIsOpen] = useState(true);
+
   function update(field, value) {
     const next = Object.assign({}, props.filters);
     next[field] = value;
@@ -103,6 +129,44 @@ export default function FilterBar(props) {
 
   return (
     <div style={{ marginBottom: 16 }}>
+      {/* 토글 헤더 */}
+      <div onClick={function () { setIsOpen(!isOpen); }}
+           style={{
+             marginBottom: 8, padding: "10px 14px",
+             background: "#0f1420", border: "1px solid " + COLORS.border,
+             borderRadius: 8, cursor: "pointer", userSelect: "none",
+             display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+           }}>
+        <span style={{
+          color: "#fff", fontSize: 14, fontWeight: 700,
+          display: "flex", alignItems: "center", gap: 6,
+        }}>
+          <span style={{
+            display: "inline-block",
+            transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
+            transition: "transform 0.15s",
+            fontSize: 12,
+          }}>▶</span>
+          🔍 필터 {isOpen ? "(접기)" : "(펼치기)"}
+        </span>
+
+        {/* 접힌 상태에서 적용된 필터 요약 */}
+        {!isOpen && (
+          <span style={{ color: "#fbbf24", fontSize: 12, fontWeight: 600,
+                         flex: 1, minWidth: 200 }}>
+            {summaryFilters(props.filters)}
+          </span>
+        )}
+
+        {/* 매칭 카운트는 항상 표시 */}
+        <span style={{ color: "#9ca3af", fontSize: 12, marginLeft: "auto" }}>
+          매칭 <b style={{ color: "#fff" }}>{props.filteredCount}</b> /
+          전체 <b style={{ color: "#fff" }}>{props.totalCount}</b>건
+        </span>
+      </div>
+
+      {/* 펼친 상태에서만 필터 row들 표시 */}
+      {!isOpen ? null : (<React.Fragment>
       {/* 기간 */}
       <ButtonGroup
         label="기간"
@@ -127,11 +191,6 @@ export default function FilterBar(props) {
                          borderRadius: 6, padding: "3px 8px", fontSize: 11, cursor: "pointer" }}>
           초기화
         </button>
-        <span style={{ color: "#4b5563" }}>|</span>
-        <span style={{ color: "#9ca3af", fontSize: 12 }}>
-          매칭 <b style={{ color: "#fff" }}>{props.filteredCount}</b> /
-          전체 <b style={{ color: "#fff" }}>{props.totalCount}</b>건
-        </span>
       </ButtonGroup>
 
       {/* 시그널 빈도 (주도주성) */}
@@ -244,6 +303,7 @@ export default function FilterBar(props) {
           [7, "7"], [8, "8"], [9, "9"], [10, "10"], [11, "11"], [12, "12"],
         ]}
       />
+      </React.Fragment>)}
     </div>
   );
 }
