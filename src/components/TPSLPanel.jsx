@@ -16,6 +16,8 @@ function NumberInput(props) {
 }
 
 const OBJECTIVES = [
+  ["d1_safe", "🥇 D+1 익절률 max", "다음날 익절 확률 최대 (단타 안정)"],
+  ["d1_ev", "💸 D+1 EV max", "다음날 단타 평균 수익 최대"],
   ["efficiency", "⚡ 일당효율", "보유일당 EV 최대"],
   ["cum", "💰 전체 누적", "모든 maxDays 그리드 중 누적 최대"],
   ["cum5", "5일 max", "보유 5일 고정에서 누적 최대"],
@@ -49,6 +51,70 @@ export default function TPSLPanel(props) {
   function applyObjective(objKey) {
     setActiveObj(objKey);
 
+    const target = props.tradesForGrid || props.trades;
+
+    // ── D+1 단타 모드 분기 ─────────────────────
+    if (objKey === "d1_safe" || objKey === "d1_ev") {
+      // TP 그리드: 3, 4, 5, 7%
+      // SL 옵션: 0(없음) 또는 -3, -5, -7
+      const tpsD1 = [3, 4, 5, 7];
+      const slsD1 = [0, -3, -5, -7];
+      let bestD1 = null;
+      const all = [];
+      for (const tp of tpsD1) {
+        for (const sl of slsD1) {
+          let n = 0, tpCnt = 0, slCnt = 0, sumPnl = 0;
+          for (const t of target) {
+            if (!t.ohlc || t.ohlc.length === 0) continue;
+            n++;
+            const e = t.entryPct;
+            const day = t.ohlc[0];
+            const dh = day[2] - e, dl = day[3] - e, dc = day[4] - e;
+            let p;
+            if (sl < 0 && dl <= sl) { p = sl; slCnt++; }
+            else if (dh >= tp) { p = tp; tpCnt++; }
+            else { p = dc; }
+            sumPnl += p;
+          }
+          if (n < 20) continue;
+          const ev = sumPnl / n;
+          const tpRate = tpCnt / n * 100;
+          const score = objKey === "d1_safe" ? (ev > 0 ? tpRate : -1) : ev;
+          all.push({ tp, sl, n, ev, cum: sumPnl, tpRate, slRate: slCnt/n*100, score });
+          if (!bestD1 || score > bestD1.score) bestD1 = { tp, sl, n, ev, cum: sumPnl, tpRate, slRate: slCnt/n*100, score };
+        }
+      }
+      all.sort((a, b) => b.score - a.score);
+      const top5 = all.slice(0, 5).map(x => ({
+        tp: x.tp, sl: x.sl, n: x.n, cum: x.cum, avg: x.ev, win: x.tpRate,
+        avgDaysTP: 1, avgDaysSL: 1, days: 1, maxDays: 1,
+        sl: x.sl,
+      }));
+      console.log("[applyObjective D+1]", objKey, "→ best:", bestD1);
+      if (bestD1) {
+        props.onChange({
+          mode: "d1",
+          tp: bestD1.tp,
+          sl: bestD1.sl,
+          maxDays: 1,
+          tp1: props.rule.tp1, tp2: props.rule.tp2, fsl: props.rule.fsl,
+        });
+      }
+      // best을 표시용 형식에 맞춤
+      const bestForUI = bestD1 ? Object.assign({}, bestD1, {
+        avg: bestD1.ev,
+        win: bestD1.tpRate,
+        tp: bestD1.tp,
+        sl: bestD1.sl,
+        maxDays: 1, days: 1,
+        avgDaysTP: 1, avgDaysSL: 1,
+        avgMdd: 0, worstMdd: 0,
+      }) : null;
+      setBestInfo({ result: { best: bestForUI, top5 }, objective: objKey });
+      return;
+    }
+
+    // ── 기존 single/split 모드 ─────────────────
     let realObj = "cum";
     let maxDaysList = [3, 5, 7, 10, 15, 20, 25, 30, 60];
     if (objKey === "cum5") { maxDaysList = [5]; }
@@ -60,19 +126,18 @@ export default function TPSLPanel(props) {
     else if (objKey === "cum60") { maxDaysList = [60]; }
     else if (objKey === "efficiency") { realObj = "efficiency"; }
 
-    const target = props.tradesForGrid || props.trades;
     const tps = [10, 15, 20, 25, 30, 50, 70, 100, 150];
     const sls = [-3, -5, -7, -10, -15];
 
     let result;
-    if (props.rule.mode === "single") {
+    if (props.rule.mode === "single" || props.rule.mode === "d1") {
+      // d1 모드인데 일반 메뉴 누른 경우 → single로 전환
+      const useMode = props.rule.mode === "d1" ? "single" : props.rule.mode;
       result = gridSearchSingle(target, {
         tps: tps, sls: sls, maxDaysList: maxDaysList, objective: realObj,
       });
       const b = result.best;
-      console.log("[applyObjective]", objKey, "→ best:", b ? {tp: b.tp, sl: b.sl, maxDays: b.maxDays, cum: b.cum} : null);
       if (b) {
-        // 명시적으로 새 룰 객체 (props.rule spread 후 덮어쓰기)
         const newRule = {
           mode: "single",
           tp: b.tp,
@@ -82,7 +147,6 @@ export default function TPSLPanel(props) {
           tp2: props.rule.tp2,
           fsl: props.rule.fsl,
         };
-        console.log("[applyObjective] onChange call:", newRule);
         props.onChange(newRule);
       }
     } else {
@@ -94,7 +158,6 @@ export default function TPSLPanel(props) {
         objective: realObj,
       });
       const b = result.best;
-      console.log("[applyObjective split]", objKey, "→ best:", b ? {tp1: b.tp1, tp2: b.tp2, sl: b.sl, fsl: b.fsl, maxDays: b.maxDays, cum: b.cum} : null);
       if (b) {
         const newRule = {
           mode: "split",
@@ -134,6 +197,10 @@ export default function TPSLPanel(props) {
         </span>
 
         <div style={{ display: "flex", gap: 4 }}>
+          <button onClick={function () { update("mode", "d1"); }}
+                  style={modeBtn(props.rule.mode === "d1")}>
+            ⚡ D+1 단타
+          </button>
           <button onClick={function () { update("mode", "single"); }}
                   style={modeBtn(props.rule.mode === "single")}>
             단일 TP
@@ -145,6 +212,16 @@ export default function TPSLPanel(props) {
         </div>
 
         <span style={{ color: "#cbd5e1" }}>|</span>
+
+        {props.rule.mode === "d1" && (
+          <React.Fragment>
+            <NumberInput label="TP" value={props.rule.tp}
+                         onChange={function (v) { update("tp", v); }} suffix="%" />
+            <NumberInput label="SL (옵션)" value={props.rule.sl || 0}
+                         onChange={function (v) { update("sl", v < 0 ? v : 0); }} suffix="%" />
+            <span style={{ fontSize: 10, color: "#94a3b8" }}>SL=0 → 다음날 종가까지</span>
+          </React.Fragment>
+        )}
 
         {props.rule.mode === "single" && (
           <React.Fragment>
@@ -172,8 +249,15 @@ export default function TPSLPanel(props) {
           </React.Fragment>
         )}
 
-        <NumberInput label="최대" value={props.rule.maxDays}
-                     onChange={function (v) { update("maxDays", v); }} suffix="일" />
+        {props.rule.mode !== "d1" && (
+          <NumberInput label="최대" value={props.rule.maxDays}
+                       onChange={function (v) { update("maxDays", v); }} suffix="일" />
+        )}
+        {props.rule.mode === "d1" && (
+          <span style={{ fontSize: 11, color: "#0891b2", fontWeight: 600 }}>
+            보유: 1일 (다음날 종가)
+          </span>
+        )}
       </div>
 
       {/* 자동 최적화 */}

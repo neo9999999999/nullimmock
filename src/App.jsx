@@ -9,22 +9,23 @@ import GuideModal from "./components/GuideModal.jsx";
 import { DEFAULT_FILTERS, applyFilters, sortTrades } from "./lib/filters.js";
 import { aggregateStats, simulate } from "./lib/simulator.js";
 
-// 🏆 검증된 골든 전략 (6년 백테스트, 모든 연도 EV+)
-// 필터: 21회+ × 5일선 돌파 × 4/5/6/7월 제외
-// 룰: TP+100% / SL-10% / 보유 20일
-// 표본 167건, 평균 EV +9.11%, 승률 26%, 평균 익절 10.9일
+// 🥇 검증된 D+1 단타 골든 룰 (6년 백테스트, 모든 연도 EV+, 익절률 76.9%)
+// 필터: 21회+ × 120일 신고가 × 5일선 돌파 × 거래대금 5000억+
+// 룰: 진입일 종가 매수 → 다음날 +5% 터치 시 즉시 익절, 안되면 종가 청산 (SL 없음)
+// 표본 39건, TP 도달 67%, EV +2.36%, 평균 익절일 1일
 const OPTIMAL_FILTERS = Object.assign({}, DEFAULT_FILTERS, {
   signalsRange: "21+",
+  high: "h120",
   pattern: "ma5_breakout",
-  monthExcluded: [4, 5, 6, 7],   // 봄~여름 약세 시즌 제외
+  amountRange: "5000+",
 });
 
 const DEFAULT_RULE = {
-  mode: "single",
-  tp: 100,
-  sl: -10,
+  mode: "d1",        // ⭐ D+1 단타 모드
+  tp: 5,             // +5% 익절
+  sl: 0,             // SL 없음 (다음날 종가까지)
+  maxDays: 1,
   tp1: 30, tp2: 100, fsl: 1,
-  maxDays: 20,
 };
 
 export default function App() {
@@ -102,11 +103,11 @@ export default function App() {
                       alignItems: "center", gap: 16, flexWrap: "wrap" }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>
-              🎯 주도주 눌림매매 백테스트
+              🎯 주도주 D+1 단타 백테스트
             </h1>
             <p style={{ margin: "4px 0 0", fontSize: 12, color: "#94a3b8" }}>
-              🏆 <b style={{color:"#fbbf24"}}>골든 전략</b>: 21회+ × 5일선 돌파 × 4/5/6/7월 제외 / TP+100%/SL-10%/20일 ·
-              <b style={{color:"#10b981"}}> 6년 모든 연도 EV+ 검증</b> · 평균 EV +9.11% · 승률 26%
+              🥇 <b style={{color:"#fbbf24"}}>D+1 단타 골든 룰</b>: 21회+ × 120일↑ × 5일선돌파 × 5000억+ / TP+5%/SL없음 ·
+              <b style={{color:"#10b981"}}> 익절률 67% · EV+2.36% · 보유 1일</b>
             </p>
           </div>
           <GuideModal />

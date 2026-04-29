@@ -46,7 +46,30 @@ export function simSplit(trade, tp1, tp2, sl, fsl, maxDays) {
 
 function r0() { return { pnl: 0, result: "NO_DATA", days: 0, mdd: 0, mddDay: 0 }; }
 
+// D+1 단타: 진입일 종가 매수 → 다음날 OHLC만 시뮬
+//   TP 터치 시 즉시 익절, SL 터치 시 즉시 손절 (있으면)
+//   둘 다 안 터치하면 다음날 종가에 강제 청산
+//   sl이 null/undefined/0이면 SL 없음
+export function simD1(trade, tp, sl) {
+  const arr = trade.ohlc;
+  const entry = trade.entryPct;
+  if (!arr || arr.length === 0) return r0();
+  const day = arr[0];  // D+1
+  const dh = day[2] - entry;
+  const dl = day[3] - entry;
+  const dc = day[4] - entry;
+  // SL 우선 (보수적, 장중 -SL 먼저 터지면 손절)
+  if (sl != null && sl < 0 && dl <= sl) {
+    return { pnl: sl, result: "SL", days: 1, mdd: dl, mddDay: 1 };
+  }
+  if (dh >= tp) {
+    return { pnl: tp, result: "TP", days: 1, mdd: dl, mddDay: 1 };
+  }
+  return { pnl: dc, result: "EOD", days: 1, mdd: dl, mddDay: 1 };
+}
+
 export function simulate(trade, rule) {
+  if (rule.mode === "d1") return simD1(trade, rule.tp, rule.sl);
   if (rule.mode === "split") return simSplit(trade, rule.tp1, rule.tp2, rule.sl, rule.fsl || 0, rule.maxDays);
   return simSingle(trade, rule.tp, rule.sl, rule.maxDays);
 }
@@ -75,7 +98,7 @@ export function aggregateStats(trades, rule) {
       else if (r.days <= 14) tpDist[2]++;
       else tpDist[3]++;
     } else if (r.result === "SL") { slCnt++; slDaysSum += r.days; }
-    else if (r.result === "TIMEOUT" || r.result === "TP1_TO" || r.result === "TP1_BE") {
+    else if (r.result === "TIMEOUT" || r.result === "TP1_TO" || r.result === "TP1_BE" || r.result === "EOD") {
       toCnt++; toDaysSum += r.days;
     }
   }
