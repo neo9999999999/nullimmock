@@ -6,51 +6,101 @@ import {
 } from "./gap.js";
 
 export default function App() {
-  // 갭 임계치 (사용자 조정)
-  const [threshold, setThreshold] = useState(7);
+  // 필터 상태
+  const [threshold, setThreshold] = useState(3);
+  const [prevBullOnly, setPrevBullOnly] = useState(true);  // 어제 양봉만
+  const [ivFilter, setIvFilter] = useState("foreign");     // all / foreign / instOnly / foreignOnly / both / negative
+  const [superOnly, setSuperOnly] = useState(false);       // 21회+만
 
   const allDays = useMemo(() => extractAllDays(tradesData), []);
 
-  const stats = useMemo(() => gapStats(allDays, threshold), [allDays, threshold]);
+  // 필터 적용 (베이스 = 임계치 X, 다른 조건만)
+  const baseDays = useMemo(() => {
+    return allDays.filter(d => {
+      if (prevBullOnly && !d.prevWasBull) return false;
+      if (superOnly && d.totalSignals < 21) return false;
+      if (ivFilter === "foreign" && !(d.iv === "기+외" || d.iv === "외만")) return false;
+      if (ivFilter === "both" && d.iv !== "기+외") return false;
+      if (ivFilter === "foreignOnly" && d.iv !== "외만") return false;
+      if (ivFilter === "instOnly" && d.iv !== "기만") return false;
+      if (ivFilter === "negative" && d.iv !== "둘다-") return false;
+      return true;
+    });
+  }, [allDays, prevBullOnly, ivFilter, superOnly]);
 
-  const topStocks = useMemo(
-    () => byStock(allDays, threshold).slice(0, 20),
-    [allDays, threshold]
-  );
+  // 임계치 적용된 케이스
+  const stats = useMemo(() => {
+    const matched = baseDays.filter(d => d.gap >= threshold);
+    if (matched.length === 0) {
+      return { n: 0, freq: 0, avgGap: 0, avgDayClose: 0, heldRate: 0, avgTodayPnl: 0, baseN: baseDays.length };
+    }
+    let sumGap = 0, sumClose = 0, held = 0, sumPnl = 0, gainCnt = 0;
+    for (const m of matched) {
+      sumGap += m.gap;
+      sumClose += m.currClose;
+      sumPnl += m.todayPnl;
+      if (m.gapHeld) held++;
+      if (m.todayPnl > 0) gainCnt++;
+    }
+    return {
+      n: matched.length,
+      baseN: baseDays.length,
+      freq: matched.length / baseDays.length * 100,
+      avgGap: sumGap / matched.length,
+      avgDayClose: sumClose / matched.length,
+      heldRate: held / matched.length * 100,
+      avgTodayPnl: sumPnl / matched.length,
+      gainRate: gainCnt / matched.length * 100,
+    };
+  }, [baseDays, threshold]);
+
+  const topStocks = useMemo(() => {
+    const matched = baseDays.filter(d => d.gap >= threshold);
+    const byName = {};
+    for (const m of matched) {
+      if (!byName[m.stockName]) {
+        byName[m.stockName] = {
+          name: m.stockName, market: m.market,
+          totalSignals: m.totalSignals, count: 0, sumGap: 0,
+        };
+      }
+      byName[m.stockName].count++;
+      byName[m.stockName].sumGap += m.gap;
+    }
+    for (const s of Object.values(byName)) s.avgGap = s.sumGap / s.count;
+    return Object.values(byName).sort((a, b) => b.count - a.count).slice(0, 20);
+  }, [baseDays, threshold]);
 
   const allCases = useMemo(() => {
-    return allDays
+    return baseDays
       .filter(d => d.gap >= threshold)
       .sort((a, b) => b.gapDate.localeCompare(a.gapDate));
-  }, [allDays, threshold]);
+  }, [baseDays, threshold]);
 
-  const prevDist = useMemo(
-    () => prevPnlDistribution(allDays, threshold),
-    [allDays, threshold]
-  );
-
-  const superDist = useMemo(
-    () => bySuperLevel(allDays, threshold),
-    [allDays, threshold]
-  );
-
-  // 시뮬: 어제 종가 매수 → 갭 시초매도 / SL -10% / 종가 만료
-  const simAll = useMemo(
-    () => simBuyYesterday(allDays, () => true, 3, -10),
-    [allDays]
-  );
-  const simSuper = useMemo(
-    () => simBuyYesterday(allDays, d => d.totalSignals >= 21, 3, -10),
-    [allDays]
-  );
-  const simExtreme = useMemo(
-    () => simBuyYesterday(
-      allDays,
-      d => d.totalSignals >= 21 && Math.abs(d.prevPnl) >= 10,
-      3, -10
-    ),
-    [allDays]
-  );
+  // 매매 룰 EV (베이스 필터 적용된 종목으로)
+  const sim = useMemo(() => {
+    if (baseDays.length === 0) return { n: 0, ev: 0, win: 0 };
+    let n = 0, sumPnl = 0, wins = 0, hits = 0, sls = 0, expires = 0;
+    for (const d of baseDays) {
+      n++;
+      if (d.gap >= 3) {
+        hits++; wins++; sumPnl += d.gap; continue;
+      }
+      const dayLow = (d.currLow - d.prevClose) / (1 + d.prevClose / 100);
+      if (dayLow <= -10) {
+        sls++; sumPnl -= 10; continue;
+      }
+      expires++; sumPnl += d.todayPnl;
+      if (d.todayPnl > 0) wins++;
+    }
+    return {
+      n, ev: sumPnl / n, win: wins / n * 100,
+      hits, sls, expires,
+      hitRate: hits / n * 100,
+      slRate: sls / n * 100,
+      expRate: expires / n * 100,
+    };
+  }, [baseDays]);
 
   return (
     <div style={{
@@ -65,239 +115,299 @@ export default function App() {
             🎯 갭상승 종목 발굴
           </h1>
           <p style={{ margin: "6px 0 0", fontSize: 13, color: "#94a3b8" }}>
-            전일 종가 대비 익일 시가 +X% 이상 갭상승한 모든 케이스 ·
-            <b style={{color:"#fbbf24"}}> 6년 백테스트 ({tradesData.length}건 기반, 일일 캔들 {allDays.length.toLocaleString()}건)</b>
+            전일 종가 매수 → 다음날 시초/종가 매도 백테스트 ·
+            <b style={{color:"#fbbf24"}}> 6년 데이터 (일봉 {allDays.length.toLocaleString()}건)</b>
           </p>
         </div>
 
-        {/* 임계치 슬라이더 */}
+        {/* 필터 박스 */}
         <div style={{
-          marginBottom: 16, padding: 12,
+          marginBottom: 16, padding: 14,
           background: "#1e293b", border: "1px solid #334155", borderRadius: 8,
-          display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
         }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#fbbf24" }}>
-            갭 임계치
-          </span>
-          {[3, 5, 7, 10, 15].map(v => (
-            <button key={v} onClick={() => setThreshold(v)}
-                    style={{
-                      background: threshold === v ? "#10b981" : "transparent",
-                      color: threshold === v ? "#fff" : "#94a3b8",
-                      border: "1px solid " + (threshold === v ? "#10b981" : "#475569"),
-                      borderRadius: 6, padding: "6px 14px", fontSize: 13,
-                      cursor: "pointer", fontWeight: 700,
-                    }}>
-              ≥ +{v}%
-            </button>
-          ))}
-        </div>
-
-        {/* 핵심 통계 4 카드 */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 10, marginBottom: 16,
-        }}>
-          <KpiCard label={`갭 ≥ +${threshold}% 발생`}
-                   value={stats.n.toLocaleString() + "건"}
-                   sub={`전체 일봉의 ${stats.freq.toFixed(2)}%`}
-                   color="#10b981" />
-          <KpiCard label="평균 갭"
-                   value={(stats.avgGap >= 0 ? "+" : "") + stats.avgGap.toFixed(2) + "%"}
-                   sub="시초가 매도 시 수익"
-                   color="#fbbf24" />
-          <KpiCard label="평균 그날 종가"
-                   value={(stats.avgDayClose >= 0 ? "+" : "") + stats.avgDayClose.toFixed(2) + "%"}
-                   sub={`매수가 대비 (어제 종가 → 오늘 종가 = ${(stats.avgTodayPnl >= 0 ? "+" : "") + stats.avgTodayPnl.toFixed(2)}%)`}
-                   color={stats.avgDayClose > stats.avgGap ? "#10b981" : "#ef4444"} />
-          <KpiCard label="갭 보존 (양봉)"
-                   value={stats.heldRate.toFixed(0) + "%"}
-                   sub={stats.heldRate >= 50
-                     ? "→ 종가까지 홀딩 권장"
-                     : "→ 시초가 매도 권장"}
-                   color="#0ea5e9" />
-        </div>
-
-        {/* 어제 종가 매수 → 다음날 시뮬 */}
-        <Section title="📊 매매 룰 시뮬: 어제 종가 매수 → 갭+3% 시초매도 / SL-10% / 종가 만료">
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: 10,
-          }}>
-            <SimCard
-              title="A. 모든 종목"
-              desc="조건 없이 매일 매수"
-              sim={simAll}
-              evColor="#94a3b8"
-            />
-            <SimCard
-              title="B. 21회+ 슈퍼주도주만"
-              desc="시그널 빈도 ≥21회 종목"
-              sim={simSuper}
-              evColor="#fbbf24"
-            />
-            <SimCard
-              title="C. 21+ × 어제 ±10% 등락"
-              desc="양극단 변동 후 매수 (가장 강한 신호)"
-              sim={simExtreme}
-              evColor="#10b981"
-            />
+          {/* 어제 양봉 + 슈퍼주도주 */}
+          <div style={{ display: "flex", alignItems: "center", gap: 16,
+                        flexWrap: "wrap", marginBottom: 12 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6,
+                            fontSize: 13, cursor: "pointer", userSelect: "none" }}>
+              <input type="checkbox" checked={prevBullOnly}
+                     onChange={(e) => setPrevBullOnly(e.target.checked)}
+                     style={{ width: 16, height: 16, cursor: "pointer" }} />
+              <span style={{ color: prevBullOnly ? "#10b981" : "#94a3b8",
+                             fontWeight: prevBullOnly ? 700 : 400 }}>
+                🟢 어제 양봉만
+              </span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6,
+                            fontSize: 13, cursor: "pointer", userSelect: "none" }}>
+              <input type="checkbox" checked={superOnly}
+                     onChange={(e) => setSuperOnly(e.target.checked)}
+                     style={{ width: 16, height: 16, cursor: "pointer" }} />
+              <span style={{ color: superOnly ? "#10b981" : "#94a3b8",
+                             fontWeight: superOnly ? 700 : 400 }}>
+                🏆 21회+ 슈퍼주도주만
+              </span>
+            </label>
           </div>
-        </Section>
 
-        {/* 어제 등락률 분포 */}
-        <Section title={`📅 어제(D-1) 등락률 별 갭 ≥ +${threshold}% 발생률`}>
-          <div style={{ fontSize: 12 }}>
-            <div style={{ color: "#94a3b8", marginBottom: 8 }}>
-              베이스 레이트 (전체): {stats.freq.toFixed(2)}% — 이보다 높은 조건 = 강한 신호
-            </div>
-            {prevDist.map((b, i) => (
-              <BarRow key={i} label={b.label} hits={b.hits} total={b.total}
-                      rate={b.rate} baseRate={stats.freq} />
+          {/* 수급 필터 */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6,
+                        flexWrap: "wrap", marginBottom: 12 }}>
+            <span style={{ fontSize: 13, color: "#fbbf24", fontWeight: 700,
+                           minWidth: 50 }}>수급</span>
+            {[
+              { key: "all", label: "전체" },
+              { key: "foreign", label: "외국인 포함 (기+외 OR 외만)" },
+              { key: "both", label: "기+외만" },
+              { key: "foreignOnly", label: "외만" },
+              { key: "instOnly", label: "기관만" },
+              { key: "negative", label: "둘다-" },
+            ].map(opt => (
+              <button key={opt.key} onClick={() => setIvFilter(opt.key)}
+                      style={{
+                        background: ivFilter === opt.key ? "#10b981" : "transparent",
+                        color: ivFilter === opt.key ? "#fff" : "#94a3b8",
+                        border: "1px solid " + (ivFilter === opt.key ? "#10b981" : "#475569"),
+                        borderRadius: 6, padding: "5px 10px", fontSize: 11,
+                        cursor: "pointer", fontWeight: 700,
+                      }}>
+                {opt.label}
+              </button>
             ))}
           </div>
-        </Section>
 
-        {/* 시그널 빈도 별 */}
-        <Section title={`🏆 슈퍼주도주성 별 갭 ≥ +${threshold}% 발생률`}>
-          {superDist.map((b, i) => (
-            <BarRow key={i} label={b.label} hits={b.hits} total={b.total}
-                    rate={b.rate} baseRate={stats.freq} />
-          ))}
-        </Section>
+          {/* 갭 임계치 */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 13, color: "#fbbf24", fontWeight: 700,
+                           minWidth: 50 }}>갭</span>
+            {[3, 5, 7, 10, 15].map(v => (
+              <button key={v} onClick={() => setThreshold(v)}
+                      style={{
+                        background: threshold === v ? "#10b981" : "transparent",
+                        color: threshold === v ? "#fff" : "#94a3b8",
+                        border: "1px solid " + (threshold === v ? "#10b981" : "#475569"),
+                        borderRadius: 6, padding: "5px 12px", fontSize: 12,
+                        cursor: "pointer", fontWeight: 700,
+                      }}>
+                ≥ +{v}%
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 요약 */}
+        <div style={{
+          marginBottom: 16, padding: 14,
+          background: "linear-gradient(to right, #064e3b, #134e4a)",
+          border: "1px solid #10b981", borderRadius: 8, color: "#a7f3d0",
+          fontSize: 13, lineHeight: 1.7,
+        }}>
+          <b style={{ fontSize: 15, color: "#10b981" }}>📊 결과:</b>
+          {" "}현재 필터로 베이스 <b style={{color:"#fff"}}>{stats.baseN.toLocaleString()}건</b> 중
+          갭 +{threshold}% 이상 <b style={{color:"#fbbf24"}}>{stats.n.toLocaleString()}건</b> 발생
+          <b style={{color:"#fff"}}> ({stats.freq.toFixed(2)}%)</b>
+          {stats.n > 0 && (
+            <span> · 평균 갭 <b style={{color:"#10b981"}}>+{stats.avgGap.toFixed(2)}%</b>
+            · 평균 익일 손익 <b style={{color:"#10b981"}}>{stats.avgTodayPnl >= 0 ? "+" : ""}{stats.avgTodayPnl.toFixed(2)}%</b>
+            · 익일 수익률 <b style={{color:"#10b981"}}>{stats.gainRate.toFixed(0)}%</b></span>
+          )}
+        </div>
+
+        {/* KPI 4 카드 */}
+        {stats.n > 0 && (
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: 10, marginBottom: 16,
+          }}>
+            <KpiCard label={`갭 ≥ +${threshold}% 발생`}
+                     value={stats.n.toLocaleString() + "건"}
+                     sub={`베이스 ${stats.baseN.toLocaleString()}건의 ${stats.freq.toFixed(2)}%`}
+                     color="#10b981" />
+            <KpiCard label="평균 갭 (시초매도)"
+                     value={"+" + stats.avgGap.toFixed(2) + "%"}
+                     sub="시초가 매도 시 평균 수익"
+                     color="#fbbf24" />
+            <KpiCard label="평균 익일 손익 (종가)"
+                     value={(stats.avgTodayPnl >= 0 ? "+" : "") + stats.avgTodayPnl.toFixed(2) + "%"}
+                     sub={`어제 종가 → 오늘 종가 (승률 ${stats.gainRate.toFixed(0)}%)`}
+                     color={stats.avgTodayPnl > 0 ? "#10b981" : "#ef4444"} />
+            <KpiCard label="갭 보존 (양봉)"
+                     value={stats.heldRate.toFixed(0) + "%"}
+                     sub={stats.heldRate >= 50
+                       ? "→ 종가까지 홀딩 권장"
+                       : "→ 시초가 매도 권장"}
+                     color="#0ea5e9" />
+          </div>
+        )}
+
+        {/* 매매 룰 시뮬 (필터된 베이스 전체에 적용) */}
+        {sim.n > 0 && (
+          <Section title="📊 매매 룰 시뮬: 어제 종가 매수 → 갭+3% 시초매도 / SL-10% / 종가 만료">
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+              gap: 10,
+            }}>
+              <SimMetric label="EV (1건당)"
+                         value={(sim.ev >= 0 ? "+" : "") + sim.ev.toFixed(2) + "%"}
+                         color={sim.ev > 0 ? "#10b981" : "#ef4444"} />
+              <SimMetric label="승률"
+                         value={sim.win.toFixed(0) + "%"} color="#0ea5e9" />
+              <SimMetric label="갭 히트"
+                         value={sim.hitRate.toFixed(0) + "%"} color="#10b981" />
+              <SimMetric label="SL"
+                         value={sim.slRate.toFixed(0) + "%"} color="#ef4444" />
+              <SimMetric label="만료"
+                         value={sim.expRate.toFixed(0) + "%"} color="#94a3b8" />
+              <SimMetric label="표본"
+                         value={sim.n.toLocaleString() + "건"} color="#fbbf24"
+                         sub={`연 약 ${Math.round(sim.n / 6)}건`} />
+            </div>
+          </Section>
+        )}
 
         {/* TOP 20 종목 */}
-        <Section title={`🥇 갭 ≥ +${threshold}% 가장 자주 받는 TOP 20 종목`}>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: "#0f172a", color: "#94a3b8" }}>
-                  <th style={th}>#</th>
-                  <th style={th}>종목명</th>
-                  <th style={th}>시장</th>
-                  <th style={th}>발생</th>
-                  <th style={th}>평균 갭</th>
-                  <th style={th}>시그널</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topStocks.map((s, i) => (
-                  <tr key={s.name} style={{
-                    background: i % 2 === 0 ? "#0f172a" : "transparent",
-                  }}>
-                    <td style={td}>{i + 1}</td>
-                    <td style={Object.assign({}, td, {fontWeight: 700, color: "#fbbf24"})}>
-                      {s.name}
-                    </td>
-                    <td style={td}>{s.market}</td>
-                    <td style={Object.assign({}, td, {fontWeight: 700, color: "#10b981"})}>
-                      {s.count}회
-                    </td>
-                    <td style={Object.assign({}, td, {color: "#10b981"})}>
-                      +{s.avgGap.toFixed(2)}%
-                    </td>
-                    <td style={Object.assign({}, td, {color: "#94a3b8"})}>
-                      {s.totalSignals}회
-                    </td>
+        {topStocks.length > 0 && (
+          <Section title={`🥇 TOP 20 종목 (가장 자주 갭 +${threshold}% 발생)`}>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: "#0f172a", color: "#94a3b8" }}>
+                    <th style={th}>#</th>
+                    <th style={th}>종목명</th>
+                    <th style={th}>시장</th>
+                    <th style={th}>발생</th>
+                    <th style={th}>평균 갭</th>
+                    <th style={th}>시그널</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Section>
+                </thead>
+                <tbody>
+                  {topStocks.map((s, i) => (
+                    <tr key={s.name} style={{
+                      background: i % 2 === 0 ? "#0f172a" : "transparent",
+                    }}>
+                      <td style={td}>{i + 1}</td>
+                      <td style={Object.assign({}, td, {fontWeight: 700, color: "#fbbf24"})}>
+                        {s.name}
+                      </td>
+                      <td style={td}>{s.market}</td>
+                      <td style={Object.assign({}, td, {fontWeight: 700, color: "#10b981"})}>
+                        {s.count}회
+                      </td>
+                      <td style={Object.assign({}, td, {color: "#10b981"})}>
+                        +{s.avgGap.toFixed(2)}%
+                      </td>
+                      <td style={Object.assign({}, td, {color: "#94a3b8"})}>
+                        {s.totalSignals}회
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+        )}
 
         {/* 전체 케이스 리스트 */}
-        <Section title={`📋 갭 ≥ +${threshold}% 발생 전체 ${allCases.length}건 (최신순)`}>
-          <div style={{ overflowX: "auto", maxHeight: 600, overflowY: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-              <thead style={{ position: "sticky", top: 0,
-                              background: "#1e293b", zIndex: 1 }}>
-                <tr style={{ color: "#94a3b8" }}>
-                  <th style={th}>#</th>
-                  <th style={th}>발생일</th>
-                  <th style={th}>종목명</th>
-                  <th style={th}>갭</th>
-                  <th style={th}>그날 종가</th>
-                  <th style={th}>어제 등락</th>
-                  <th style={th}>시그널</th>
-                  <th style={th}>D+</th>
-                  <th style={th}>슈퍼</th>
-                </tr>
-              </thead>
-              <tbody>
-                {allCases.map((c, i) => (
-                  <tr key={i} style={{
-                    background: i % 2 === 0 ? "#0f172a" : "transparent",
-                    color: "#cbd5e1",
-                  }}>
-                    <td style={td}>{i + 1}</td>
-                    <td style={td}>{fmtDate(c.gapDate)}</td>
-                    <td style={Object.assign({}, td, {fontWeight: 700, color: "#fbbf24"})}>
-                      {c.stockName}
-                    </td>
-                    <td style={Object.assign({}, td, {fontWeight: 700, color: "#10b981"})}>
-                      +{c.gap.toFixed(2)}%
-                    </td>
-                    <td style={Object.assign({}, td, {
-                      color: c.currClose > c.currOpen ? "#10b981" : "#ef4444",
-                    })}>
-                      {(c.currClose >= 0 ? "+" : "") + c.currClose.toFixed(1)}%
-                    </td>
-                    <td style={Object.assign({}, td, {
-                      color: c.prevPnl >= 0 ? "#10b981" : "#ef4444",
-                    })}>
-                      {(c.prevPnl >= 0 ? "+" : "") + c.prevPnl.toFixed(1)}%
-                    </td>
-                    <td style={td}>{fmtDate(c.refDate)} ({c.signalCh}%)</td>
-                    <td style={td}>{c.dayIdx}d</td>
-                    <td style={Object.assign({}, td, {color: "#94a3b8"})}>
-                      {c.totalSignals}회
-                    </td>
+        {allCases.length > 0 && (
+          <Section title={`📋 전체 ${allCases.length.toLocaleString()}건 (최신순)`}>
+            <div style={{ overflowX: "auto", maxHeight: 600, overflowY: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                <thead style={{ position: "sticky", top: 0,
+                                background: "#1e293b", zIndex: 1 }}>
+                  <tr style={{ color: "#94a3b8" }}>
+                    <th style={th}>#</th>
+                    <th style={th}>발생일</th>
+                    <th style={th}>종목명</th>
+                    <th style={th}>갭</th>
+                    <th style={th}>익일 손익</th>
+                    <th style={th}>그날 종가</th>
+                    <th style={th}>어제 등락</th>
+                    <th style={th}>수급</th>
+                    <th style={th}>시그널</th>
+                    <th style={th}>D+</th>
+                    <th style={th}>슈퍼</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Section>
+                </thead>
+                <tbody>
+                  {allCases.map((c, i) => (
+                    <tr key={i} style={{
+                      background: i % 2 === 0 ? "#0f172a" : "transparent",
+                      color: "#cbd5e1",
+                    }}>
+                      <td style={td}>{i + 1}</td>
+                      <td style={td}>{fmtDate(c.gapDate)}</td>
+                      <td style={Object.assign({}, td, {fontWeight: 700, color: "#fbbf24"})}>
+                        {c.stockName}
+                      </td>
+                      <td style={Object.assign({}, td, {fontWeight: 700, color: "#10b981"})}>
+                        +{c.gap.toFixed(2)}%
+                      </td>
+                      <td style={Object.assign({}, td, {
+                        fontWeight: 700,
+                        color: c.todayPnl >= 0 ? "#10b981" : "#ef4444",
+                      })}>
+                        {(c.todayPnl >= 0 ? "+" : "") + c.todayPnl.toFixed(2)}%
+                      </td>
+                      <td style={Object.assign({}, td, {
+                        color: c.currClose > c.currOpen ? "#10b981" : "#ef4444",
+                      })}>
+                        {(c.currClose >= 0 ? "+" : "") + c.currClose.toFixed(1)}%
+                      </td>
+                      <td style={Object.assign({}, td, {
+                        color: c.prevPnl >= 0 ? "#10b981" : "#ef4444",
+                      })}>
+                        {(c.prevPnl >= 0 ? "+" : "") + c.prevPnl.toFixed(1)}%
+                      </td>
+                      <td style={Object.assign({}, td, {color: "#fbbf24"})}>
+                        {c.iv}
+                      </td>
+                      <td style={td}>{fmtDate(c.refDate)} ({c.signalCh}%)</td>
+                      <td style={td}>{c.dayIdx}d</td>
+                      <td style={Object.assign({}, td, {color: "#94a3b8"})}>
+                        {c.totalSignals}회
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+        )}
 
-        {/* 결론 */}
-        <Section title="💡 핵심 인사이트">
-          <ul style={{ fontSize: 13, lineHeight: 1.8, color: "#cbd5e1",
-                       paddingLeft: 20, margin: 0 }}>
-            <li>
-              갭 ≥ +{threshold}% 발생 후 평균 그날 종가 <b style={{color:"#10b981"}}>
-                +{stats.avgDayClose.toFixed(2)}%</b>
-              {stats.avgDayClose > stats.avgGap
-                ? " (시초가 매도 +" + stats.avgGap.toFixed(2) + "% 보다 높음 → 종가까지 홀딩이 정답)"
-                : " (시초가 매도 +" + stats.avgGap.toFixed(2) + "% 보다 낮음 → 시초가 매도가 정답)"
-              }
-            </li>
-            <li>
-              어제 캔들로 다음날 갭 예측 어려움 — 양극단 (±10% 이상)이 가장 강한 신호 (베이스의 약 4배)
-            </li>
-            <li>
-              "어제 종가 매수 → 다음날 갭+3% 시초매도" 룰 EV: <b style={{color:"#10b981"}}>
-                +{simExtreme.ev.toFixed(2)}%</b>
-              {" (조건: 21+ 슈퍼주도주 + 어제 ±10% 등락, 표본 "}
-              {simExtreme.n}{"건)"}
-            </li>
-            <li>
-              슬리피지 -0.3% 감안 시 실제 EV: 약 +{Math.max(0, simExtreme.ev - 0.3).toFixed(2)}%
-            </li>
-            <li>
-              매매 빈도: 6년 {simExtreme.n}건 → 연 약 {Math.round(simExtreme.n / 6)}건 (매일 평균 {(simExtreme.n / 6 / 250).toFixed(1)}건)
-            </li>
-          </ul>
-        </Section>
+        {allCases.length === 0 && (
+          <div style={{
+            padding: 40, textAlign: "center", color: "#94a3b8",
+            background: "#1e293b", borderRadius: 8,
+          }}>
+            현재 필터로 매칭되는 케이스가 없습니다.
+          </div>
+        )}
 
         <div style={{ textAlign: "center", color: "#475569", fontSize: 11,
                       marginTop: 20, paddingBottom: 20 }}>
-          데이터: {tradesData.length}건의 trade × 평균 보유 N일 = 일봉 {allDays.length.toLocaleString()}건 ·
+          데이터: {tradesData.length}건 trade × 평균 보유 = 일봉 {allDays.length.toLocaleString()}건 ·
           기간: 2021.01 ~ 2026.04
         </div>
       </div>
+    </div>
+  );
+}
+
+function SimMetric(props) {
+  return (
+    <div style={{
+      background: "#0f172a", border: "1px solid #334155",
+      borderRadius: 6, padding: 8,
+    }}>
+      <div style={{ fontSize: 10, color: "#94a3b8" }}>{props.label}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: props.color }}>
+        {props.value}
+      </div>
+      {props.sub && (
+        <div style={{ fontSize: 9, color: "#64748b" }}>{props.sub}</div>
+      )}
     </div>
   );
 }
