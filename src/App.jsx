@@ -5,6 +5,7 @@ import TPSLPanel from "./components/TPSLPanel.jsx";
 import StatsCards from "./components/StatsCards.jsx";
 import TradesTable from "./components/TradesTable.jsx";
 import YearMonthBreakdown from "./components/YearMonthBreakdown.jsx";
+import GuideModal from "./components/GuideModal.jsx";
 import { DEFAULT_FILTERS, applyFilters, sortTrades } from "./lib/filters.js";
 import { aggregateStats, simulate } from "./lib/simulator.js";
 
@@ -80,13 +81,18 @@ export default function App() {
         padding: "20px 24px",
         boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
       }}>
-        <div style={{ maxWidth: 1280, margin: "0 auto" }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>
-            🎯 주도주 눌림매매 백테스트
-          </h1>
-          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#94a3b8" }}>
-            6년치 데이터 (2021~2026.04) · {tradesData.length}개 진입 trades · 필터/TP·SL 슬라이더로 실시간 시뮬
-          </p>
+        <div style={{ maxWidth: 1280, margin: "0 auto",
+                      display: "flex", justifyContent: "space-between",
+                      alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>
+              🎯 주도주 눌림매매 백테스트
+            </h1>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: "#94a3b8" }}>
+              6년치 데이터 (2021~2026.04) · {tradesData.length}개 진입 trades · 필터/TP·SL 슬라이더로 실시간 시뮬
+            </p>
+          </div>
+          <GuideModal />
         </div>
       </div>
 
