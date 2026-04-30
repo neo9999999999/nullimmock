@@ -1,110 +1,169 @@
-import React, { useMemo, useState } from "react";
-import tradesData from "./data/trades.json";
-import {
-  extractAllDays, fmtDate, gapStats, byStock,
-  prevPnlDistribution, bySuperLevel, simBuyYesterday,
-} from "./gap.js";
-import SimilarSearch from "./SimilarSearch.jsx";
-import PatternScan from "./PatternScan.jsx";
+// App.jsx — 패턴 매칭 단일 페이지
+//
+// 목적:
+// 1. 패턴 라이브러리 (이미지 + 조건) 추가/관리
+// 2. 21~26년 데이터(24,355건)에서 패턴 매칭 → 백테스트 (성공률/평균수익)
+// 3. 오늘 sector-api 시그널 → 같은 패턴 매칭 → 매수 후보 TOP
+
+import React, { useState, useEffect, useMemo } from "react";
+import signalsData from "./data/signals.json";
+
+const SECTOR_API = "https://sector-api-pink.vercel.app/api";
+
+// 빌트인 풍산형 패턴
+const BUILTIN_PATTERNS = [
+  {
+    id: "builtin_box_breakout",
+    name: "풍산형 (장기 박스권 → 거래대금 폭증 돌파)",
+    desc: "1차 급등 → 11개월 박스권 → 큰 양봉 + 거래대금 30배 폭증",
+    criteria: {
+      pctMin: 13, pctMax: 22,
+      amtMin: 800, amtMax: 2000,
+      iv: ["기+외"],          // 외인+기관 쌍매수
+      requireBox: true,        // 박스권 (h60/h120 둘 다 false)
+      sigsMin: 11,             // 시그널 11회+
+    },
+    builtin: true,
+  },
+];
 
 export default function App() {
-  const [tab, setTab] = useState("scan");  // 'scan' | 'gap' | 'similar'
+  // 패턴 라이브러리
+  const [patterns, setPatterns] = useState(BUILTIN_PATTERNS);
+  const [selected, setSelected] = useState(BUILTIN_PATTERNS[0]);
+  const [showAddForm, setShowAddForm] = useState(false);
 
-  // 필터 상태 (gap 탭용)
-  const [threshold, setThreshold] = useState(3);
-  const [prevBullOnly, setPrevBullOnly] = useState(true);  // 어제 양봉만
-  const [ivFilter, setIvFilter] = useState("foreign");     // all / foreign / instOnly / foreignOnly / both / negative
-  const [superOnly, setSuperOnly] = useState(false);       // 21회+만
+  // 사용자 커스텀 패턴 로드
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.storage) return;
+    (async () => {
+      try {
+        const list = await window.storage.list("pattern:custom_");
+        if (!list || !list.keys) return;
+        const customs = [];
+        for (const k of list.keys) {
+          try {
+            const r = await window.storage.get(k);
+            if (r) customs.push(JSON.parse(r.value));
+          } catch (e) {}
+        }
+        if (customs.length > 0) setPatterns([...BUILTIN_PATTERNS, ...customs]);
+      } catch (e) {}
+    })();
+  }, []);
 
-  const allDays = useMemo(() => extractAllDays(tradesData), []);
-
-  // 필터 적용 (베이스 = 임계치 X, 다른 조건만)
-  const baseDays = useMemo(() => {
-    return allDays.filter(d => {
-      if (prevBullOnly && !d.prevWasBull) return false;
-      if (superOnly && d.totalSignals < 21) return false;
-      if (ivFilter === "foreign" && !(d.iv === "기+외" || d.iv === "외만")) return false;
-      if (ivFilter === "both" && d.iv !== "기+외") return false;
-      if (ivFilter === "foreignOnly" && d.iv !== "외만") return false;
-      if (ivFilter === "instOnly" && d.iv !== "기만") return false;
-      if (ivFilter === "negative" && d.iv !== "둘다-") return false;
-      return true;
-    });
-  }, [allDays, prevBullOnly, ivFilter, superOnly]);
-
-  // 임계치 적용된 케이스
-  const stats = useMemo(() => {
-    const matched = baseDays.filter(d => d.gap >= threshold);
-    if (matched.length === 0) {
-      return { n: 0, freq: 0, avgGap: 0, avgDayClose: 0, heldRate: 0, avgTodayPnl: 0, baseN: baseDays.length };
+  // 백테스트: 21~26년 매칭
+  const backtest = useMemo(() => {
+    const matched = signalsData.filter(s => matchesCriteria(s, selected.criteria));
+    const withFuture = matched.filter(s => s.mg60 != null);
+    if (withFuture.length === 0) {
+      return { n: matched.length, withFuture: 0, avgGain: 0,
+               win30: 0, win50: 0, win100: 0, neg: 0, byYear: {} };
     }
-    let sumGap = 0, sumClose = 0, held = 0, sumPnl = 0, gainCnt = 0;
-    for (const m of matched) {
-      sumGap += m.gap;
-      sumClose += m.currClose;
-      sumPnl += m.todayPnl;
-      if (m.gapHeld) held++;
-      if (m.todayPnl > 0) gainCnt++;
-    }
-    return {
-      n: matched.length,
-      baseN: baseDays.length,
-      freq: matched.length / baseDays.length * 100,
-      avgGap: sumGap / matched.length,
-      avgDayClose: sumClose / matched.length,
-      heldRate: held / matched.length * 100,
-      avgTodayPnl: sumPnl / matched.length,
-      gainRate: gainCnt / matched.length * 100,
-    };
-  }, [baseDays, threshold]);
-
-  const topStocks = useMemo(() => {
-    const matched = baseDays.filter(d => d.gap >= threshold);
-    const byName = {};
-    for (const m of matched) {
-      if (!byName[m.stockName]) {
-        byName[m.stockName] = {
-          name: m.stockName, market: m.market,
-          totalSignals: m.totalSignals, count: 0, sumGap: 0,
-        };
-      }
-      byName[m.stockName].count++;
-      byName[m.stockName].sumGap += m.gap;
-    }
-    for (const s of Object.values(byName)) s.avgGap = s.sumGap / s.count;
-    return Object.values(byName).sort((a, b) => b.count - a.count).slice(0, 20);
-  }, [baseDays, threshold]);
-
-  const allCases = useMemo(() => {
-    return baseDays
-      .filter(d => d.gap >= threshold)
-      .sort((a, b) => b.gapDate.localeCompare(a.gapDate));
-  }, [baseDays, threshold]);
-
-  // 매매 룰 EV (베이스 필터 적용된 종목으로)
-  const sim = useMemo(() => {
-    if (baseDays.length === 0) return { n: 0, ev: 0, win: 0 };
-    let n = 0, sumPnl = 0, wins = 0, hits = 0, sls = 0, expires = 0;
-    for (const d of baseDays) {
-      n++;
-      if (d.gap >= 3) {
-        hits++; wins++; sumPnl += d.gap; continue;
-      }
-      const dayLow = (d.currLow - d.prevClose) / (1 + d.prevClose / 100);
-      if (dayLow <= -10) {
-        sls++; sumPnl -= 10; continue;
-      }
-      expires++; sumPnl += d.todayPnl;
-      if (d.todayPnl > 0) wins++;
+    const sumGain = withFuture.reduce((s, c) => s + c.mg60, 0);
+    const win30 = withFuture.filter(s => s.mg60 >= 30).length;
+    const win50 = withFuture.filter(s => s.mg60 >= 50).length;
+    const win100 = withFuture.filter(s => s.mg60 >= 100).length;
+    const neg = withFuture.filter(s => s.mg60 < 0).length;
+    const byYear = {};
+    for (const s of withFuture) {
+      const yy = "20" + s.date.slice(0, 2);
+      if (!byYear[yy]) byYear[yy] = { n: 0, sumGain: 0, win30: 0 };
+      byYear[yy].n++;
+      byYear[yy].sumGain += s.mg60;
+      if (s.mg60 >= 30) byYear[yy].win30++;
     }
     return {
-      n, ev: sumPnl / n, win: wins / n * 100,
-      hits, sls, expires,
-      hitRate: hits / n * 100,
-      slRate: sls / n * 100,
-      expRate: expires / n * 100,
+      n: matched.length, withFuture: withFuture.length,
+      avgGain: sumGain / withFuture.length,
+      win30, win30Rate: win30 / withFuture.length * 100,
+      win50, win50Rate: win50 / withFuture.length * 100,
+      win100, win100Rate: win100 / withFuture.length * 100,
+      neg, negRate: neg / withFuture.length * 100,
+      byYear, matched,
     };
-  }, [baseDays]);
+  }, [selected.id]);
+
+  // 당일 스캔
+  const [todaySignals, setTodaySignals] = useState(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState(null);
+
+  async function scanToday() {
+    setScanning(true);
+    setScanError(null);
+    setTodaySignals(null);
+    try {
+      const res = await fetch(SECTOR_API + "/screening");
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "API 에러");
+      // 패턴 매칭 점수
+      const all = (data.all || []).map(s => ({
+        ...s,
+        match: matchesCriteria({
+          ch: s.change || 0,
+          amt: s.amount || 0,
+          iv: s.investor === "기+외" ? "기+외" :
+              s.investor === "외인" ? "외만" :
+              s.investor === "기관" ? "기만" : "둘다-",
+          h60: false, h120: false,  // 모름 (시그널일 정보 없음)
+          sigs: 30,                  // 모름 (가정 통과)
+          wick: s.wick || 0,
+        }, selected.criteria),
+      }));
+      // 매칭만 추출
+      const matched = all.filter(s => s.match);
+      matched.sort((a, b) => (b.score || 0) - (a.score || 0));
+      setTodaySignals({ ...data, matched, all });
+    } catch (e) {
+      setScanError(e.message);
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  // 선택 패턴 변경 시 당일 결과 재매칭
+  useEffect(() => {
+    if (!todaySignals) return;
+    const all = (todaySignals.all || []).map(s => ({
+      ...s,
+      match: matchesCriteria({
+        ch: s.change || 0,
+        amt: s.amount || 0,
+        iv: s.investor === "기+외" ? "기+외" :
+            s.investor === "외인" ? "외만" :
+            s.investor === "기관" ? "기만" : "둘다-",
+        h60: false, h120: false,
+        sigs: 30,
+        wick: s.wick || 0,
+      }, selected.criteria),
+    }));
+    const matched = all.filter(s => s.match);
+    matched.sort((a, b) => (b.score || 0) - (a.score || 0));
+    setTodaySignals({ ...todaySignals, matched, all });
+  }, [selected.id]);
+
+  async function addPattern(p) {
+    if (typeof window === "undefined" || !window.storage) {
+      alert("저장 불가"); return;
+    }
+    const id = "custom_" + Date.now();
+    const pattern = { ...p, id, builtin: false };
+    try {
+      await window.storage.set("pattern:" + id, JSON.stringify(pattern));
+      setPatterns([...patterns, pattern]);
+      setShowAddForm(false);
+    } catch (e) { alert("저장 실패: " + e.message); }
+  }
+
+  async function deletePattern(id) {
+    if (!confirm("삭제하시겠습니까?")) return;
+    if (typeof window !== "undefined" && window.storage) {
+      try { await window.storage.delete("pattern:" + id); } catch (e) {}
+    }
+    setPatterns(patterns.filter(p => p.id !== id));
+    if (selected.id === id) setSelected(BUILTIN_PATTERNS[0]);
+  }
 
   return (
     <div style={{
@@ -114,449 +173,469 @@ export default function App() {
     }}>
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
         {/* 헤더 */}
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 20 }}>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#10b981" }}>
-            🎯 갭상승 종목 발굴
+            🎯 차트 패턴 매칭 — 오늘 매수 후보 발굴
           </h1>
           <p style={{ margin: "6px 0 0", fontSize: 13, color: "#94a3b8" }}>
-            전일 종가 매수 → 다음날 시초/종가 매도 백테스트 ·
-            <b style={{color:"#fbbf24"}}> 6년 데이터 (일봉 {allDays.length.toLocaleString()}건)</b>
+            과거 6년 ({signalsData.length.toLocaleString()}건) 백테스트 →
+            <b style={{color:"#fbbf24"}}> 오늘 같은 패턴 종목 발굴</b>
           </p>
         </div>
 
-        {/* 탭 */}
-        <div style={{
-          display: "flex", gap: 4, marginBottom: 16,
-          borderBottom: "1px solid #334155",
-        }}>
-          <TabBtn active={tab === "scan"} onClick={() => setTab("scan")}
-                  label="🔥 당일 패턴 스캔" />
-          <TabBtn active={tab === "gap"} onClick={() => setTab("gap")}
-                  label="📊 갭상승 분석" />
-          <TabBtn active={tab === "similar"} onClick={() => setTab("similar")}
-                  label="🔍 유사 종목 검색" />
-        </div>
-
-        {/* 탭 컨텐츠: 당일 패턴 스캔 */}
-        {tab === "scan" && <PatternScan />}
-
-        {/* 탭 컨텐츠: 유사 검색 */}
-        {tab === "similar" && <SimilarSearch />}
-
-        {/* 탭 컨텐츠: 갭 분석 */}
-        {tab === "gap" && (<>
-        {/* 필터 박스 */}
+        {/* 패턴 라이브러리 */}
         <div style={{
           marginBottom: 16, padding: 14,
           background: "#1e293b", border: "1px solid #334155", borderRadius: 8,
         }}>
-          {/* 어제 양봉 + 슈퍼주도주 */}
-          <div style={{ display: "flex", alignItems: "center", gap: 16,
-                        flexWrap: "wrap", marginBottom: 12 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6,
-                            fontSize: 13, cursor: "pointer", userSelect: "none" }}>
-              <input type="checkbox" checked={prevBullOnly}
-                     onChange={(e) => setPrevBullOnly(e.target.checked)}
-                     style={{ width: 16, height: 16, cursor: "pointer" }} />
-              <span style={{ color: prevBullOnly ? "#10b981" : "#94a3b8",
-                             fontWeight: prevBullOnly ? 700 : 400 }}>
-                🟢 어제 양봉만
-              </span>
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 6,
-                            fontSize: 13, cursor: "pointer", userSelect: "none" }}>
-              <input type="checkbox" checked={superOnly}
-                     onChange={(e) => setSuperOnly(e.target.checked)}
-                     style={{ width: 16, height: 16, cursor: "pointer" }} />
-              <span style={{ color: superOnly ? "#10b981" : "#94a3b8",
-                             fontWeight: superOnly ? 700 : 400 }}>
-                🏆 21회+ 슈퍼주도주만
-              </span>
-            </label>
+          <div style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            marginBottom: 10,
+          }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: "#fbbf24" }}>
+              📚 패턴 라이브러리 ({patterns.length}개)
+            </span>
+            <button onClick={() => setShowAddForm(!showAddForm)}
+              style={{
+                background: "#10b981", color: "#fff", border: "none",
+                borderRadius: 6, padding: "5px 12px", fontSize: 11,
+                cursor: "pointer", fontWeight: 700,
+              }}>
+              {showAddForm ? "취소" : "+ 패턴 추가 (이미지)"}
+            </button>
           </div>
 
-          {/* 수급 필터 */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6,
-                        flexWrap: "wrap", marginBottom: 12 }}>
-            <span style={{ fontSize: 13, color: "#fbbf24", fontWeight: 700,
-                           minWidth: 50 }}>수급</span>
-            {[
-              { key: "all", label: "전체" },
-              { key: "foreign", label: "외국인 포함 (기+외 OR 외만)" },
-              { key: "both", label: "기+외만" },
-              { key: "foreignOnly", label: "외만" },
-              { key: "instOnly", label: "기관만" },
-              { key: "negative", label: "둘다-" },
-            ].map(opt => (
-              <button key={opt.key} onClick={() => setIvFilter(opt.key)}
-                      style={{
-                        background: ivFilter === opt.key ? "#10b981" : "transparent",
-                        color: ivFilter === opt.key ? "#fff" : "#94a3b8",
-                        border: "1px solid " + (ivFilter === opt.key ? "#10b981" : "#475569"),
-                        borderRadius: 6, padding: "5px 10px", fontSize: 11,
-                        cursor: "pointer", fontWeight: 700,
-                      }}>
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          {showAddForm && (
+            <AddPatternForm onAdd={addPattern} onCancel={() => setShowAddForm(false)} />
+          )}
 
-          {/* 갭 임계치 */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 13, color: "#fbbf24", fontWeight: 700,
-                           minWidth: 50 }}>갭</span>
-            {[3, 5, 7, 10, 15].map(v => (
-              <button key={v} onClick={() => setThreshold(v)}
-                      style={{
-                        background: threshold === v ? "#10b981" : "transparent",
-                        color: threshold === v ? "#fff" : "#94a3b8",
-                        border: "1px solid " + (threshold === v ? "#10b981" : "#475569"),
-                        borderRadius: 6, padding: "5px 12px", fontSize: 12,
-                        cursor: "pointer", fontWeight: 700,
-                      }}>
-                ≥ +{v}%
-              </button>
+          <div style={{ display: "grid", gap: 8 }}>
+            {patterns.map(p => (
+              <PatternCard key={p.id} pattern={p}
+                selected={selected.id === p.id}
+                onClick={() => setSelected(p)}
+                onDelete={p.builtin ? null : () => deletePattern(p.id)} />
             ))}
           </div>
         </div>
 
-        {/* 요약 */}
+        {/* 백테스트 결과 */}
+        <BacktestResults backtest={backtest} pattern={selected} />
+
+        {/* 당일 스캔 */}
         <div style={{
           marginBottom: 16, padding: 14,
           background: "linear-gradient(to right, #064e3b, #134e4a)",
-          border: "1px solid #10b981", borderRadius: 8, color: "#a7f3d0",
-          fontSize: 13, lineHeight: 1.7,
+          border: "1px solid #10b981", borderRadius: 8,
         }}>
-          <b style={{ fontSize: 15, color: "#10b981" }}>📊 결과:</b>
-          {" "}현재 필터로 베이스 <b style={{color:"#fff"}}>{stats.baseN.toLocaleString()}건</b> 중
-          갭 +{threshold}% 이상 <b style={{color:"#fbbf24"}}>{stats.n.toLocaleString()}건</b> 발생
-          <b style={{color:"#fff"}}> ({stats.freq.toFixed(2)}%)</b>
-          {stats.n > 0 && (
-            <span> · 평균 갭 <b style={{color:"#10b981"}}>+{stats.avgGap.toFixed(2)}%</b>
-            · 평균 익일 손익 <b style={{color:"#10b981"}}>{stats.avgTodayPnl >= 0 ? "+" : ""}{stats.avgTodayPnl.toFixed(2)}%</b>
-            · 익일 수익률 <b style={{color:"#10b981"}}>{stats.gainRate.toFixed(0)}%</b></span>
-          )}
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#10b981", marginBottom: 8 }}>
+            🔥 오늘 같은 패턴 매수 후보
+          </div>
+          <div style={{ fontSize: 11, color: "#a7f3d0", marginBottom: 10 }}>
+            sector-api 호출 → 오늘 시그널 종목 → "{selected.name}" 패턴 매칭
+          </div>
+          <button onClick={scanToday} disabled={scanning}
+            style={{
+              background: scanning ? "#475569" : "#10b981",
+              color: "#fff", border: "none", borderRadius: 6,
+              padding: "10px 20px", fontSize: 14, fontWeight: 700,
+              cursor: scanning ? "wait" : "pointer",
+            }}>
+            {scanning ? "스캔 중..." : "🔍 당일 스캔"}
+          </button>
         </div>
 
-        {/* KPI 4 카드 */}
-        {stats.n > 0 && (
+        {scanError && (
           <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: 10, marginBottom: 16,
+            marginBottom: 16, padding: 14, background: "#7f1d1d",
+            border: "1px solid #ef4444", borderRadius: 8, color: "#fecaca",
           }}>
-            <KpiCard label={`갭 ≥ +${threshold}% 발생`}
-                     value={stats.n.toLocaleString() + "건"}
-                     sub={`베이스 ${stats.baseN.toLocaleString()}건의 ${stats.freq.toFixed(2)}%`}
-                     color="#10b981" />
-            <KpiCard label="평균 갭 (시초매도)"
-                     value={"+" + stats.avgGap.toFixed(2) + "%"}
-                     sub="시초가 매도 시 평균 수익"
-                     color="#fbbf24" />
-            <KpiCard label="평균 익일 손익 (종가)"
-                     value={(stats.avgTodayPnl >= 0 ? "+" : "") + stats.avgTodayPnl.toFixed(2) + "%"}
-                     sub={`어제 종가 → 오늘 종가 (승률 ${stats.gainRate.toFixed(0)}%)`}
-                     color={stats.avgTodayPnl > 0 ? "#10b981" : "#ef4444"} />
-            <KpiCard label="갭 보존 (양봉)"
-                     value={stats.heldRate.toFixed(0) + "%"}
-                     sub={stats.heldRate >= 50
-                       ? "→ 종가까지 홀딩 권장"
-                       : "→ 시초가 매도 권장"}
-                     color="#0ea5e9" />
+            ⚠️ {scanError}
           </div>
         )}
 
-        {/* 매매 룰 시뮬 (필터된 베이스 전체에 적용) */}
-        {sim.n > 0 && (
-          <Section title="📊 매매 룰 시뮬: 어제 종가 매수 → 갭+3% 시초매도 / SL-10% / 종가 만료">
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-              gap: 10,
-            }}>
-              <SimMetric label="EV (1건당)"
-                         value={(sim.ev >= 0 ? "+" : "") + sim.ev.toFixed(2) + "%"}
-                         color={sim.ev > 0 ? "#10b981" : "#ef4444"} />
-              <SimMetric label="승률"
-                         value={sim.win.toFixed(0) + "%"} color="#0ea5e9" />
-              <SimMetric label="갭 히트"
-                         value={sim.hitRate.toFixed(0) + "%"} color="#10b981" />
-              <SimMetric label="SL"
-                         value={sim.slRate.toFixed(0) + "%"} color="#ef4444" />
-              <SimMetric label="만료"
-                         value={sim.expRate.toFixed(0) + "%"} color="#94a3b8" />
-              <SimMetric label="표본"
-                         value={sim.n.toLocaleString() + "건"} color="#fbbf24"
-                         sub={`연 약 ${Math.round(sim.n / 6)}건`} />
-            </div>
-          </Section>
-        )}
+        {todaySignals && <TodayResults data={todaySignals} pattern={selected} />}
 
-        {/* TOP 20 종목 */}
-        {topStocks.length > 0 && (
-          <Section title={`🥇 TOP 20 종목 (가장 자주 갭 +${threshold}% 발생)`}>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                <thead>
-                  <tr style={{ background: "#0f172a", color: "#94a3b8" }}>
-                    <th style={th}>#</th>
-                    <th style={th}>종목명</th>
-                    <th style={th}>시장</th>
-                    <th style={th}>발생</th>
-                    <th style={th}>평균 갭</th>
-                    <th style={th}>시그널</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topStocks.map((s, i) => (
-                    <tr key={s.name} style={{
-                      background: i % 2 === 0 ? "#0f172a" : "transparent",
-                    }}>
-                      <td style={td}>{i + 1}</td>
-                      <td style={Object.assign({}, td, {fontWeight: 700, color: "#fbbf24"})}>
-                        {s.name}
-                      </td>
-                      <td style={td}>{s.market}</td>
-                      <td style={Object.assign({}, td, {fontWeight: 700, color: "#10b981"})}>
-                        {s.count}회
-                      </td>
-                      <td style={Object.assign({}, td, {color: "#10b981"})}>
-                        +{s.avgGap.toFixed(2)}%
-                      </td>
-                      <td style={Object.assign({}, td, {color: "#94a3b8"})}>
-                        {s.totalSignals}회
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Section>
-        )}
-
-        {/* 전체 케이스 리스트 */}
-        {allCases.length > 0 && (
-          <Section title={`📋 전체 ${allCases.length.toLocaleString()}건 (최신순)`}>
-            <div style={{ overflowX: "auto", maxHeight: 600, overflowY: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-                <thead style={{ position: "sticky", top: 0,
-                                background: "#1e293b", zIndex: 1 }}>
-                  <tr style={{ color: "#94a3b8" }}>
-                    <th style={th}>#</th>
-                    <th style={th}>발생일</th>
-                    <th style={th}>종목명</th>
-                    <th style={th}>갭</th>
-                    <th style={th}>익일 손익</th>
-                    <th style={th}>그날 종가</th>
-                    <th style={th}>어제 등락</th>
-                    <th style={th}>수급</th>
-                    <th style={th}>시그널</th>
-                    <th style={th}>D+</th>
-                    <th style={th}>슈퍼</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {allCases.map((c, i) => (
-                    <tr key={i} style={{
-                      background: i % 2 === 0 ? "#0f172a" : "transparent",
-                      color: "#cbd5e1",
-                    }}>
-                      <td style={td}>{i + 1}</td>
-                      <td style={td}>{fmtDate(c.gapDate)}</td>
-                      <td style={Object.assign({}, td, {fontWeight: 700, color: "#fbbf24"})}>
-                        {c.stockName}
-                      </td>
-                      <td style={Object.assign({}, td, {fontWeight: 700, color: "#10b981"})}>
-                        +{c.gap.toFixed(2)}%
-                      </td>
-                      <td style={Object.assign({}, td, {
-                        fontWeight: 700,
-                        color: c.todayPnl >= 0 ? "#10b981" : "#ef4444",
-                      })}>
-                        {(c.todayPnl >= 0 ? "+" : "") + c.todayPnl.toFixed(2)}%
-                      </td>
-                      <td style={Object.assign({}, td, {
-                        color: c.currClose > c.currOpen ? "#10b981" : "#ef4444",
-                      })}>
-                        {(c.currClose >= 0 ? "+" : "") + c.currClose.toFixed(1)}%
-                      </td>
-                      <td style={Object.assign({}, td, {
-                        color: c.prevPnl >= 0 ? "#10b981" : "#ef4444",
-                      })}>
-                        {(c.prevPnl >= 0 ? "+" : "") + c.prevPnl.toFixed(1)}%
-                      </td>
-                      <td style={Object.assign({}, td, {color: "#fbbf24"})}>
-                        {c.iv}
-                      </td>
-                      <td style={td}>{fmtDate(c.refDate)} ({c.signalCh}%)</td>
-                      <td style={td}>{c.dayIdx}d</td>
-                      <td style={Object.assign({}, td, {color: "#94a3b8"})}>
-                        {c.totalSignals}회
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Section>
-        )}
-
-        {allCases.length === 0 && (
-          <div style={{
-            padding: 40, textAlign: "center", color: "#94a3b8",
-            background: "#1e293b", borderRadius: 8,
-          }}>
-            현재 필터로 매칭되는 케이스가 없습니다.
-          </div>
-        )}
-
-        {tab === "gap" && (
         <div style={{ textAlign: "center", color: "#475569", fontSize: 11,
                       marginTop: 20, paddingBottom: 20 }}>
-          데이터: {tradesData.length}건 trade × 평균 보유 = 일봉 {allDays.length.toLocaleString()}건 ·
-          기간: 2021.01 ~ 2026.04
+          데이터: D.pkl {signalsData.length.toLocaleString()}건 시그널 (2021.01 ~ 2026.04)
         </div>
-        )}
-        </>)}
       </div>
     </div>
   );
 }
 
-function TabBtn({ active, onClick, label }) {
-  return (
-    <button onClick={onClick}
-      style={{
-        background: active ? "#10b981" : "transparent",
-        color: active ? "#fff" : "#94a3b8",
-        border: "none",
-        borderBottom: active ? "3px solid #10b981" : "3px solid transparent",
-        padding: "10px 20px", fontSize: 13, fontWeight: 700,
-        cursor: "pointer", marginBottom: -1,
-      }}>
-      {label}
-    </button>
-  );
+// 패턴 매칭 (true/false)
+function matchesCriteria(s, c) {
+  if (c.pctMin != null && s.ch < c.pctMin) return false;
+  if (c.pctMax != null && s.ch > c.pctMax) return false;
+  if (c.amtMin != null && s.amt < c.amtMin) return false;
+  if (c.amtMax != null && s.amt > c.amtMax) return false;
+  if (c.iv && c.iv.length > 0 && !c.iv.includes(s.iv)) return false;
+  if (c.requireBox && (s.h60 || s.h120)) return false;
+  if (c.requireH60 && !s.h60) return false;
+  if (c.sigsMin != null && s.sigs < c.sigsMin) return false;
+  if (c.wickMax != null && s.wick != null && s.wick > c.wickMax) return false;
+  return true;
 }
 
-function SimMetric(props) {
+function PatternCard({ pattern, selected, onClick, onDelete }) {
   return (
-    <div style={{
-      background: "#0f172a", border: "1px solid #334155",
-      borderRadius: 6, padding: 8,
-    }}>
-      <div style={{ fontSize: 10, color: "#94a3b8" }}>{props.label}</div>
-      <div style={{ fontSize: 18, fontWeight: 800, color: props.color }}>
-        {props.value}
+    <div onClick={onClick}
+      style={{
+        padding: 10, borderRadius: 6,
+        background: selected ? "#0f172a" : "transparent",
+        border: "1px solid " + (selected ? "#10b981" : "#334155"),
+        cursor: "pointer",
+        display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+      }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: selected ? "#10b981" : "#fff" }}>
+          {pattern.builtin && "📌 "}{pattern.name}
+        </div>
+        {pattern.desc && (
+          <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>
+            {pattern.desc}
+          </div>
+        )}
+        <div style={{ fontSize: 10, color: "#fbbf24", marginTop: 4 }}>
+          {summarizeCriteria(pattern.criteria)}
+        </div>
+        {pattern.image_b64 && (
+          <img src={pattern.image_b64} alt=""
+               style={{ maxHeight: 80, marginTop: 6, borderRadius: 4 }} />
+        )}
       </div>
-      {props.sub && (
-        <div style={{ fontSize: 9, color: "#64748b" }}>{props.sub}</div>
+      {onDelete && (
+        <button onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          style={{
+            background: "transparent", color: "#ef4444",
+            border: "1px solid #ef4444", borderRadius: 4,
+            padding: "2px 6px", fontSize: 10, cursor: "pointer",
+          }}>
+          삭제
+        </button>
       )}
     </div>
   );
 }
 
-function KpiCard(props) {
+function summarizeCriteria(c) {
+  if (!c) return "";
+  const parts = [];
+  if (c.pctMin != null && c.pctMax != null) parts.push(`+${c.pctMin}~${c.pctMax}%`);
+  else if (c.pctMin != null) parts.push(`+${c.pctMin}%+`);
+  if (c.amtMin != null && c.amtMax != null) parts.push(`${c.amtMin}~${c.amtMax}억`);
+  else if (c.amtMin != null) parts.push(`${c.amtMin}억+`);
+  if (c.iv && c.iv.length > 0) parts.push("수급:" + c.iv.join("/"));
+  if (c.requireBox) parts.push("박스권");
+  if (c.requireH60) parts.push("60일 신고가");
+  if (c.sigsMin != null) parts.push(`시그널 ${c.sigsMin}+`);
+  return parts.join(" · ");
+}
+
+function AddPatternForm({ onAdd, onCancel }) {
+  const [name, setName] = useState("");
+  const [desc, setDesc] = useState("");
+  const [imageB64, setImageB64] = useState("");
+  const [pctMin, setPctMin] = useState(13);
+  const [pctMax, setPctMax] = useState(22);
+  const [amtMin, setAmtMin] = useState(800);
+  const [amtMax, setAmtMax] = useState(2000);
+  const [iv, setIv] = useState("기+외");
+  const [requireBox, setRequireBox] = useState(true);
+  const [requireH60, setRequireH60] = useState(false);
+  const [sigsMin, setSigsMin] = useState(11);
+
+  function onFile(e) {
+    const f = e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = (ev) => setImageB64(ev.target.result);
+    r.readAsDataURL(f);
+  }
+
+  function submit() {
+    if (!name) { alert("이름 입력"); return; }
+    onAdd({
+      name, desc, image_b64: imageB64,
+      criteria: {
+        pctMin: parseFloat(pctMin), pctMax: parseFloat(pctMax),
+        amtMin: parseFloat(amtMin), amtMax: parseFloat(amtMax),
+        iv: iv === "전체" ? [] : iv.split("/"),
+        requireBox, requireH60,
+        sigsMin: parseInt(sigsMin) || 0,
+      },
+    });
+  }
+
   return (
     <div style={{
-      background: "#1e293b", border: "1px solid #334155",
-      borderRadius: 8, padding: 12,
+      padding: 12, marginBottom: 10,
+      background: "#0f172a", border: "1px dashed #475569", borderRadius: 6,
     }}>
-      <div style={{ fontSize: 11, color: "#94a3b8" }}>{props.label}</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: props.color || "#fff",
-                    marginTop: 4 }}>
-        {props.value}
+      <div style={{ fontSize: 12, color: "#fbbf24", marginBottom: 8, fontWeight: 700 }}>
+        새 패턴 추가
       </div>
-      <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>
-        {props.sub}
+      <input type="text" value={name} onChange={e => setName(e.target.value)}
+        placeholder="패턴 이름 (예: 풍산형)" style={inp} />
+      <input type="text" value={desc} onChange={e => setDesc(e.target.value)}
+        placeholder="설명" style={inp} />
+      <input type="file" accept="image/*" onChange={onFile}
+        style={{ ...inp, padding: 4 }} />
+      {imageB64 && (
+        <img src={imageB64} alt="preview"
+             style={{ maxHeight: 100, marginBottom: 8, borderRadius: 4 }} />
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginBottom: 8 }}>
+        <label style={lbl}>등락률 min (%)
+          <input type="number" value={pctMin} onChange={e => setPctMin(e.target.value)} style={numInp} />
+        </label>
+        <label style={lbl}>등락률 max (%)
+          <input type="number" value={pctMax} onChange={e => setPctMax(e.target.value)} style={numInp} />
+        </label>
+        <label style={lbl}>거래대금 min (억)
+          <input type="number" value={amtMin} onChange={e => setAmtMin(e.target.value)} style={numInp} />
+        </label>
+        <label style={lbl}>거래대금 max (억)
+          <input type="number" value={amtMax} onChange={e => setAmtMax(e.target.value)} style={numInp} />
+        </label>
+        <label style={lbl}>수급 (기+외/외만/기만/둘다-/전체)
+          <select value={iv} onChange={e => setIv(e.target.value)}
+            style={{ ...numInp, padding: 6 }}>
+            <option>전체</option>
+            <option>기+외</option>
+            <option>기+외/외만</option>
+            <option>외만</option>
+            <option>기만</option>
+            <option>둘다-</option>
+          </select>
+        </label>
+        <label style={lbl}>시그널 빈도 min (회+)
+          <input type="number" value={sigsMin} onChange={e => setSigsMin(e.target.value)} style={numInp} />
+        </label>
+      </div>
+
+      <div style={{ display: "flex", gap: 14, fontSize: 11, color: "#94a3b8" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <input type="checkbox" checked={requireBox} onChange={e => setRequireBox(e.target.checked)} />
+          박스권 (60일/120일 신고가 X)
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <input type="checkbox" checked={requireH60} onChange={e => setRequireH60(e.target.checked)} />
+          60일 신고가 갱신
+        </label>
+      </div>
+
+      <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+        <button onClick={submit} style={{ ...btn, background: "#10b981" }}>저장</button>
+        <button onClick={onCancel} style={{ ...btn, background: "#475569" }}>취소</button>
       </div>
     </div>
   );
 }
 
-function Section(props) {
+function BacktestResults({ backtest, pattern }) {
+  if (backtest.n === 0) {
+    return (
+      <div style={{
+        marginBottom: 16, padding: 30, textAlign: "center",
+        background: "#1e293b", border: "1px solid #334155", borderRadius: 8,
+        color: "#94a3b8",
+      }}>
+        조건 매칭 시그널 없음. 패턴 조건 완화 필요.
+      </div>
+    );
+  }
+  const years = Object.keys(backtest.byYear).sort();
+  const recent20 = backtest.matched
+    .filter(s => s.mg60 != null)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 20);
+
   return (
     <div style={{
       marginBottom: 16, padding: 14,
-      background: "#1e293b", border: "1px solid #334155",
-      borderRadius: 8,
+      background: "#1e293b", border: "1px solid #334155", borderRadius: 8,
     }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: "#fbbf24",
-                    marginBottom: 10 }}>
-        {props.title}
+      <div style={{ fontSize: 14, fontWeight: 700, color: "#fbbf24", marginBottom: 8 }}>
+        📊 백테스트 (21~26년) — "{pattern.name}"
       </div>
-      {props.children}
+
+      {/* KPI */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+        gap: 8, marginBottom: 14,
+      }}>
+        <Kpi label="매칭 시그널" value={backtest.n.toLocaleString() + "건"} color="#fbbf24" />
+        <Kpi label="평균 60일 최고" value={"+" + backtest.avgGain.toFixed(1) + "%"} color="#10b981" />
+        <Kpi label="+30% 도달률" value={backtest.win30Rate.toFixed(0) + "%"}
+             sub={backtest.win30 + "건"} color="#10b981" />
+        <Kpi label="+50% 도달률" value={backtest.win50Rate.toFixed(0) + "%"}
+             sub={backtest.win50 + "건"} color="#10b981" />
+        <Kpi label="+100% 대박" value={backtest.win100Rate.toFixed(0) + "%"}
+             sub={backtest.win100 + "건"} color="#10b981" />
+        <Kpi label="음수 마감" value={backtest.negRate.toFixed(0) + "%"}
+             sub={backtest.neg + "건"} color="#ef4444" />
+      </div>
+
+      {/* 연도별 */}
+      <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 6 }}>연도별 발생 + 평균 60일 최고:</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 6, marginBottom: 14 }}>
+        {years.map(y => {
+          const b = backtest.byYear[y];
+          return (
+            <div key={y} style={{
+              background: "#0f172a", border: "1px solid #334155",
+              borderRadius: 4, padding: 6, fontSize: 11,
+            }}>
+              <div style={{ color: "#fbbf24", fontWeight: 700 }}>{y}</div>
+              <div style={{ color: "#fff" }}>{b.n}건 · 평균 +{(b.sumGain/b.n).toFixed(1)}%</div>
+              <div style={{ color: "#10b981", fontSize: 10 }}>+30% 도달 {b.win30}건 ({(b.win30/b.n*100).toFixed(0)}%)</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 최근 20건 */}
+      <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 6 }}>최근 매칭 시그널 20건:</div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+          <thead>
+            <tr style={{ color: "#94a3b8" }}>
+              <th style={th}>#</th>
+              <th style={th}>날짜</th>
+              <th style={th}>종목</th>
+              <th style={th}>시장</th>
+              <th style={th}>등락</th>
+              <th style={th}>거래대금</th>
+              <th style={th}>수급</th>
+              <th style={th}>시그널</th>
+              <th style={th}>60일 최고</th>
+              <th style={th}>도달일</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recent20.map((s, i) => (
+              <tr key={i} style={{ background: i % 2 === 0 ? "#0f172a" : "transparent" }}>
+                <td style={td}>{i+1}</td>
+                <td style={td}>{s.date}</td>
+                <td style={Object.assign({}, td, { fontWeight: 700, color: "#fbbf24" })}>{s.name}</td>
+                <td style={td}>{s.mkt}</td>
+                <td style={Object.assign({}, td, { color: "#10b981" })}>+{s.ch}%</td>
+                <td style={td}>{s.amt}억</td>
+                <td style={td}>{s.iv}</td>
+                <td style={Object.assign({}, td, { color: "#94a3b8" })}>{s.sigs}회</td>
+                <td style={Object.assign({}, td, {
+                  fontWeight: 700,
+                  color: s.mg60 >= 30 ? "#10b981" : s.mg60 >= 0 ? "#fbbf24" : "#ef4444",
+                })}>
+                  {s.mg60 >= 0 ? "+" : ""}{s.mg60.toFixed(1)}%
+                </td>
+                <td style={td}>{s.d2m}일</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
-function SimCard(props) {
-  const ev = props.sim.ev;
-  const evDisplay = (ev >= 0 ? "+" : "") + ev.toFixed(2) + "%";
+function TodayResults({ data, pattern }) {
+  const matched = data.matched || [];
+  return (
+    <div style={{
+      marginBottom: 16, padding: 14, background: "#1e293b",
+      border: "1px solid #334155", borderRadius: 8,
+    }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "#fbbf24", marginBottom: 8 }}>
+        🥇 오늘 매수 후보 ({data.date} {data.time})
+      </div>
+      <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10 }}>
+        오늘 시그널 {data.summary?.total || 0}건 중 "{pattern.name}" 매칭 <b style={{color:"#10b981"}}>{matched.length}건</b>
+      </div>
+      {matched.length === 0 ? (
+        <div style={{ padding: 20, textAlign: "center", color: "#94a3b8" }}>
+          오늘은 이 패턴 매칭 종목 없음. 다른 패턴 시도하거나 내일 다시.
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+            <thead>
+              <tr style={{ color: "#94a3b8" }}>
+                <th style={th}>#</th>
+                <th style={th}>NEO 등급</th>
+                <th style={th}>종목</th>
+                <th style={th}>코드</th>
+                <th style={th}>등락</th>
+                <th style={th}>거래대금</th>
+                <th style={th}>윗꼬리</th>
+                <th style={th}>수급</th>
+                <th style={th}>시장</th>
+              </tr>
+            </thead>
+            <tbody>
+              {matched.map((s, i) => (
+                <tr key={s.code} style={{ background: i % 2 === 0 ? "#0f172a" : "transparent" }}>
+                  <td style={td}>{i+1}</td>
+                  <td style={Object.assign({}, td, {
+                    fontWeight: 800,
+                    color: s.grade === "S" ? "#10b981" :
+                           s.grade === "A" ? "#fbbf24" :
+                           s.grade === "B" ? "#0ea5e9" : "#64748b",
+                  })}>{s.grade}</td>
+                  <td style={Object.assign({}, td, { fontWeight: 700, color: "#fbbf24" })}>{s.name}</td>
+                  <td style={td}>{s.code}</td>
+                  <td style={Object.assign({}, td, { color: "#10b981" })}>+{(s.change || 0).toFixed(2)}%</td>
+                  <td style={td}>{s.amount}억</td>
+                  <td style={td}>{s.wick != null ? s.wick + "%" : "-"}</td>
+                  <td style={Object.assign({}, td, {
+                    color: s.investor === "기+외" ? "#10b981" :
+                           s.investor === "외인" ? "#0ea5e9" : "#94a3b8",
+                  })}>{s.investor}</td>
+                  <td style={td}>{s.market}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Kpi({ label, value, sub, color }) {
   return (
     <div style={{
       background: "#0f172a", border: "1px solid #334155",
-      borderRadius: 8, padding: 12,
+      borderRadius: 6, padding: 8,
     }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>
-        {props.title}
-      </div>
-      <div style={{ fontSize: 10, color: "#64748b", marginBottom: 6 }}>
-        {props.desc}
-      </div>
-      <div style={{ fontSize: 22, fontWeight: 800,
-                    color: ev > 0 ? "#10b981" : "#ef4444" }}>
-        EV {evDisplay}
-      </div>
-      <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>
-        표본 {props.sim.n.toLocaleString()}건 · 승률 {props.sim.win.toFixed(0)}% ·
-        <br />
-        갭히트 {props.sim.hitRate.toFixed(0)}% / SL {props.sim.slRate.toFixed(0)}% /
-        만료 {props.sim.expRate.toFixed(0)}%
-      </div>
+      <div style={{ fontSize: 10, color: "#94a3b8" }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color }}>{value}</div>
+      {sub && <div style={{ fontSize: 9, color: "#64748b" }}>{sub}</div>}
     </div>
   );
 }
 
-function BarRow(props) {
-  const isHigh = props.rate > props.baseRate;
-  const w = Math.min(100, props.rate / 10 * 100);
-  return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 8,
-      padding: "4px 0", fontSize: 11,
-    }}>
-      <span style={{ minWidth: 130, color: "#94a3b8" }}>{props.label}</span>
-      <span style={{ minWidth: 80, color: "#fff" }}>
-        {props.hits.toLocaleString()} / {props.total.toLocaleString()}
-      </span>
-      <span style={{
-        flex: 1, height: 14, background: "#0f172a", borderRadius: 3,
-        position: "relative",
-      }}>
-        <span style={{
-          position: "absolute", top: 0, left: 0, height: "100%",
-          width: w + "%", borderRadius: 3,
-          background: isHigh ? "#10b981" : "#475569",
-          transition: "width 0.3s",
-        }} />
-      </span>
-      <span style={{
-        minWidth: 50, textAlign: "right", fontWeight: 700,
-        color: isHigh ? "#10b981" : "#94a3b8",
-      }}>
-        {props.rate.toFixed(2)}%
-      </span>
-    </div>
-  );
-}
-
-const th = {
-  textAlign: "center", padding: "6px 8px",
-  fontSize: 11, fontWeight: 600,
-  borderBottom: "1px solid #334155",
+const inp = {
+  width: "100%", padding: 8, fontSize: 12, marginBottom: 6,
+  background: "#1e293b", color: "#fff",
+  border: "1px solid #475569", borderRadius: 4, outline: "none",
+  boxSizing: "border-box",
 };
-
+const numInp = { ...inp, width: "100%", marginBottom: 0 };
+const lbl = { fontSize: 10, color: "#94a3b8", display: "flex", flexDirection: "column", gap: 2 };
+const btn = {
+  border: "none", color: "#fff", padding: "6px 14px",
+  borderRadius: 4, fontSize: 12, fontWeight: 700, cursor: "pointer",
+};
+const th = {
+  textAlign: "center", padding: "6px 8px", fontSize: 11,
+  fontWeight: 600, borderBottom: "1px solid #334155",
+};
 const td = {
   textAlign: "center", padding: "5px 8px",
   borderBottom: "1px solid #1e293b",
