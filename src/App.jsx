@@ -11,6 +11,61 @@ import signalsData from "./data/signals.json";
 const SECTOR_API = "https://sector-api-pink.vercel.app/api";
 
 // 5가지 타입 — 이전 6타입에서 A/D 통합 (둘 다 박스권 돌파라서)
+// criteria 풀세트 — 모든 필터 (사용자 편집 가능)
+// box/breakout/uptrend/vrev/h60/h120: "req"=필수 / "no"=금지 / "any"=무관
+const DEFAULT_CRITERIA = {
+  1: {
+    chMin: 13, chMax: 30,
+    amtMin: 300, amtMax: 3000,
+    h60: "no", h120: "no",
+    isBox: "req", isBreakout: "any", isUptrend: "no", isVRev: "any",
+    range60Min: 0, range60Max: 50,
+    sigsMin: 0, sigsMax: 99,
+    wickMax: 10,
+    ivAllowed: ["기+외", "외만", "기만", "둘다-"],
+  },
+  2: {
+    chMin: 13, chMax: 27,
+    amtMin: 200, amtMax: 2500,
+    h60: "no", h120: "no",
+    isBox: "any", isBreakout: "any", isUptrend: "no", isVRev: "req",
+    range60Min: 0, range60Max: 99,
+    sigsMin: 0, sigsMax: 99,
+    wickMax: 10,
+    ivAllowed: ["기+외", "외만", "기만", "둘다-"],
+  },
+  3: {
+    chMin: 9, chMax: 30,
+    amtMin: 200, amtMax: 2500,
+    h60: "any", h120: "any",
+    isBox: "any", isBreakout: "any", isUptrend: "any", isVRev: "any",
+    range60Min: 0, range60Max: 99,
+    sigsMin: 2, sigsMax: 99,
+    wickMax: 10,
+    ivAllowed: ["기+외", "외만", "기만", "둘다-"],
+  },
+  4: {
+    chMin: 13, chMax: 25,
+    amtMin: 300, amtMax: 2500,
+    h60: "any", h120: "no",
+    isBox: "req", isBreakout: "req", isUptrend: "any", isVRev: "any",
+    range60Min: 0, range60Max: 50,
+    sigsMin: 0, sigsMax: 99,
+    wickMax: 10,
+    ivAllowed: ["기+외", "외만", "기만", "둘다-"],
+  },
+  5: {
+    chMin: 7, chMax: 17,
+    amtMin: 500, amtMax: 99999,
+    h60: "req", h120: "any",
+    isBox: "any", isBreakout: "any", isUptrend: "req", isVRev: "no",
+    range60Min: 0, range60Max: 99,
+    sigsMin: 0, sigsMax: 99,
+    wickMax: 10,
+    ivAllowed: ["기+외", "외만", "기만", "둘다-"],
+  },
+};
+
 const PATTERN_TYPES = [
   {
     id: 1,
@@ -18,7 +73,6 @@ const PATTERN_TYPES = [
     short: "박스권",
     desc: "장기 횡보 후 거래대금 폭증 큰 양봉 — 가장 흔한 패턴",
     examples: "풍산, 케이엘넷, NAVER, 쿠콘, POSCO, 한화, 한전KPS, 고영, 나우IB, 넥스틸, 우리기술",
-    criteria: { chMin:13, chMax:30, amtMin:300, amtMax:3000, h60:false, h120:false },
     color: "#10b981",
     icon: "📦",
   },
@@ -28,7 +82,6 @@ const PATTERN_TYPES = [
     short: "V반등",
     desc: "1년+ 하락 후 추세 전환 (장기 바닥에서 첫 큰 양봉)",
     examples: "NHN KCP, 카카오, 안랩, 휴스틸, 탑코미디어, 웹케시, 대주산업",
-    criteria: { chMin:13, chMax:27, amtMin:200, amtMax:2500, h60:false, h120:false },
     color: "#0ea5e9",
     icon: "🔄",
   },
@@ -38,7 +91,6 @@ const PATTERN_TYPES = [
     short: "재현",
     desc: "1차 시그널 후 횡보 → 우측에서 같은 시그널 재발생",
     examples: "하이트진로, DSC인베스트, 세명전기, GS글로벌, 에스피지, 유라테크, 대동기어",
-    criteria: { chMin:9, chMax:30, amtMin:200, amtMax:2500, h60:false, h120:false, sigsMin:2 },
     color: "#fbbf24",
     icon: "🔁",
   },
@@ -48,7 +100,6 @@ const PATTERN_TYPES = [
     short: "매물대",
     desc: "박스권 매물대 정확히 돌파 (저항선 깨짐)",
     examples: "명신산업 (대표 사례), 박스권 위 거래대금 폭증",
-    criteria: { chMin:13, chMax:25, amtMin:300, amtMax:2500, h60:false, h120:false },
     color: "#ec4899",
     icon: "🚀",
   },
@@ -58,38 +109,53 @@ const PATTERN_TYPES = [
     short: "추세",
     desc: "이미 정배열 상승 중인 강한 추세주 + 단기 조정 후 재돌파",
     examples: "현대엘리베이터, 레인보우로보틱스, 한화오션, 삼성카드, 두산에너빌리티",
-    criteria: { chMin:7, chMax:17, amtMin:500, amtMax:99999, h60:true },
     color: "#a855f7",
     icon: "📈",
   },
 ];
 
-// 매칭 (boolean) — 검증된 데이터(verify) 우선
+// 매칭 (boolean) — 풀세트 criteria 적용
 function matchType(s, c, typeId) {
   const ch = s.ch ?? s.change ?? 0;
   const amt = s.amt ?? s.amount ?? 0;
-  if (ch < c.chMin || ch > c.chMax) return false;
-  if (amt < c.amtMin || amt > c.amtMax) return false;
 
-  // 검증 안 됐으면 (verify 없음) → null로 처리, 통과 (점진적 표시)
-  // 검증됐으면 정확한 판정
+  // 1. 등락률
+  if (ch < c.chMin || ch > c.chMax) return false;
+  // 2. 거래대금
+  if (amt < c.amtMin || amt > c.amtMax) return false;
+  // 3. 윗꼬리
+  if ((s.wick ?? 0) > (c.wickMax ?? 10)) return false;
+  // 4. 수급
+  if (c.ivAllowed && !c.ivAllowed.includes(s.iv)) return false;
+
+  // 5. 검증 데이터 기반 (verify 있을 때만)
   if (s.verify) {
-    // 타입별 정확한 매칭
-    if (typeId === 1) {
-      // 박스권 돌파: 박스권이어야 함
-      if (!s.isBox) return false;
-    } else if (typeId === 2) {
-      // V자 반등: 60일 평균 아래에서 반등
-      if (!s.isVRev) return false;
-    } else if (typeId === 4) {
-      // 매물대 돌파: 박스 상단 돌파
-      if (!s.isBreakout) return false;
-    } else if (typeId === 5) {
-      // 정배열 추세: h60=true 필수
-      if (!s.isUptrend) return false;
+    const v = s.verify;
+    // 박스권/돌파/추세/V반등
+    const checkBool = (rule, value) => {
+      if (rule === "req" && !value) return false;
+      if (rule === "no" && value) return false;
+      return true;
+    };
+    if (!checkBool(c.isBox, v.isBox)) return false;
+    if (!checkBool(c.isBreakout, v.isBreakout)) return false;
+    if (!checkBool(c.isUptrend, v.isUptrend)) return false;
+    if (!checkBool(c.isVRev, v.isVRev)) return false;
+    if (!checkBool(c.h60, v.h60)) return false;
+    if (!checkBool(c.h120, v.h120)) return false;
+    // 60일 변동폭
+    if (v.range60 != null) {
+      if (v.range60 < (c.range60Min ?? 0)) return false;
+      if (v.range60 > (c.range60Max ?? 99)) return false;
     }
-    // TYPE 3 (시그널 재현) — sigsMin 검증
-    if (c.sigsMin != null && s.sigs < c.sigsMin) return false;
+    // 시그널 빈도
+    if (v.sigs != null) {
+      if (v.sigs < (c.sigsMin ?? 0)) return false;
+      if (v.sigs > (c.sigsMax ?? 99)) return false;
+    }
+  } else {
+    // verify 없으면: ch/amt 통과만 확인 (점진적 표시)
+    if (c.sigsMin != null && c.sigsMin > 0 && (s.sigs ?? 0) < c.sigsMin) return false;
   }
   return true;
 }
@@ -225,14 +291,147 @@ function toSig(s, verify) {
 export default function App() {
   const [tab, setTab] = useState("today");
   const [selectedSig, setSelectedSig] = useState(null);  // 모달용
+  const [zoomImg, setZoomImg] = useState(null);  // 이미지 확대 모달
+
+  // 사용자 수정한 criteria (window.storage)
+  const [customCriteria, setCustomCriteria] = useState(DEFAULT_CRITERIA);
+
+  // 사용자 학습 차트 (window.storage)
+  const [userPatterns, setUserPatterns] = useState({});
 
   // 당일 시그널
   const [todayAll, setTodayAll] = useState(null);
-  const [verifyMap, setVerifyMap] = useState({});  // {code: {h60, h120, box, ...}}
+  const [verifyMap, setVerifyMap] = useState({});
   const [scanning, setScanning] = useState(false);
-  const [verifying, setVerifying] = useState(0);   // 0~100 검증 진행률
+  const [verifying, setVerifying] = useState(0);
   const [scanError, setScanError] = useState(null);
   const [scanTime, setScanTime] = useState(null);
+
+  // 초기 로드: customCriteria + userPatterns
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.storage) return;
+    (async () => {
+      // criteria 로드
+      try {
+        const list = await window.storage.list("ucrit:");
+        if (list && list.keys) {
+          const merged = JSON.parse(JSON.stringify(DEFAULT_CRITERIA));
+          for (const k of list.keys) {
+            try {
+              const r = await window.storage.get(k);
+              if (r) {
+                const typeId = parseInt(k.replace("ucrit:", ""));
+                if (merged[typeId]) {
+                  merged[typeId] = { ...merged[typeId], ...JSON.parse(r.value) };
+                }
+              }
+            } catch (e) {}
+          }
+          setCustomCriteria(merged);
+        }
+      } catch (e) {}
+
+      // userPatterns 로드
+      try {
+        const list = await window.storage.list("upat:");
+        if (list && list.keys) {
+          const out = {};
+          for (const k of list.keys) {
+            try {
+              const r = await window.storage.get(k);
+              if (r) {
+                const p = JSON.parse(r.value);
+                if (!out[p.typeId]) out[p.typeId] = [];
+                out[p.typeId].push({ ...p, key: k });
+              }
+            } catch (e) {}
+          }
+          setUserPatterns(out);
+        }
+      } catch (e) {}
+    })();
+  }, []);
+
+  // criteria 저장
+  async function saveCriteria(typeId, newCrit) {
+    setCustomCriteria(prev => ({ ...prev, [typeId]: newCrit }));
+    if (typeof window !== "undefined" && window.storage) {
+      try {
+        await window.storage.set("ucrit:" + typeId, JSON.stringify(newCrit));
+      } catch (e) {}
+    }
+  }
+
+  // criteria 기본값 복원
+  async function resetCriteria(typeId) {
+    setCustomCriteria(prev => ({ ...prev, [typeId]: DEFAULT_CRITERIA[typeId] }));
+    if (typeof window !== "undefined" && window.storage) {
+      try {
+        await window.storage.delete("ucrit:" + typeId);
+      } catch (e) {}
+    }
+  }
+
+  // 학습 차트로 자동 조정 (학습 차트들의 평균/범위 기반)
+  async function autoAdjustFromUserPatterns(typeId) {
+    const list = userPatterns[typeId] || [];
+    if (list.length < 2) {
+      alert("학습 차트가 2개 이상이어야 자동 조정이 가능합니다");
+      return;
+    }
+    const cur = customCriteria[typeId];
+    const chs = list.map(p => p.ch).filter(v => !isNaN(v));
+    const amts = list.map(p => p.amt).filter(v => !isNaN(v));
+    const wicks = list.map(p => p.wick || 0);
+    
+    const next = {
+      ...cur,
+      chMin: Math.max(0, Math.floor(Math.min(...chs) - 2)),
+      chMax: Math.ceil(Math.max(...chs) + 2),
+      amtMin: Math.max(0, Math.floor(Math.min(...amts) * 0.7)),
+      amtMax: Math.ceil(Math.max(...amts) * 1.5),
+      wickMax: Math.max(5, Math.ceil(Math.max(...wicks) + 2)),
+    };
+    // h60/h120: 모두 같은 값이면 적용
+    const h60s = list.map(p => !!p.h60);
+    const h120s = list.map(p => !!p.h120);
+    if (h60s.every(v => v)) next.h60 = "req";
+    else if (h60s.every(v => !v)) next.h60 = "no";
+    if (h120s.every(v => v)) next.h120 = "req";
+    else if (h120s.every(v => !v)) next.h120 = "no";
+    
+    await saveCriteria(typeId, next);
+    alert(`✅ TYPE ${typeId} 기준이 학습 차트 ${list.length}개 기반으로 조정됨`);
+  }
+
+  async function saveUserPattern(pattern) {
+    const id = "upat:" + pattern.typeId + "_" + Date.now();
+    pattern.key = id;
+    if (typeof window !== "undefined" && window.storage) {
+      try {
+        await window.storage.set(id, JSON.stringify(pattern));
+      } catch (e) {}
+    }
+    setUserPatterns(prev => {
+      const next = { ...prev };
+      if (!next[pattern.typeId]) next[pattern.typeId] = [];
+      next[pattern.typeId] = [...next[pattern.typeId], pattern];
+      return next;
+    });
+  }
+
+  async function deleteUserPattern(key, typeId) {
+    if (typeof window !== "undefined" && window.storage) {
+      try { await window.storage.delete(key); } catch (e) {}
+    }
+    setUserPatterns(prev => {
+      const next = { ...prev };
+      if (next[typeId]) {
+        next[typeId] = next[typeId].filter(p => p.key !== key);
+      }
+      return next;
+    });
+  }
 
   async function runScan() {
     setScanning(true);
@@ -328,10 +527,21 @@ export default function App() {
             scanning={scanning} verifying={verifying}
             scanError={scanError}
             scanTime={scanTime} onScan={runScan}
+            customCriteria={customCriteria}
             onClickSig={setSelectedSig} />
         )}
         {tab === "bt" && <BacktestTab />}
-        {tab === "def" && <DefinitionsTab />}
+        {tab === "def" && (
+          <DefinitionsTab
+            customCriteria={customCriteria}
+            userPatterns={userPatterns}
+            onSaveCriteria={saveCriteria}
+            onResetCriteria={resetCriteria}
+            onAutoAdjust={autoAdjustFromUserPatterns}
+            onSaveUserPattern={saveUserPattern}
+            onDeleteUserPattern={deleteUserPattern}
+            onZoomImg={setZoomImg} />
+        )}
 
         {/* 푸터 */}
         <div style={{
@@ -347,23 +557,48 @@ export default function App() {
       {selectedSig && (
         <SyncDetailModal sig={selectedSig} onClose={() => setSelectedSig(null)} />
       )}
+
+      {/* 이미지 확대 모달 */}
+      {zoomImg && (
+        <div onClick={() => setZoomImg(null)}
+          style={{
+            position: "fixed", inset: 0,
+            background: "rgba(0,0,0,0.92)", zIndex: 1000,
+            display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center",
+            padding: 20, cursor: "zoom-out",
+          }}>
+          <div style={{ marginBottom: 12, color: "#fff", fontSize: 14, fontWeight: 700 }}>
+            {zoomImg.name || "차트"} {zoomImg.ch != null && `· +${zoomImg.ch}% · ${zoomImg.amt}억 · ${zoomImg.iv || ""}`}
+          </div>
+          <img src={zoomImg.img} alt="확대"
+            style={{
+              maxWidth: "95vw", maxHeight: "85vh",
+              borderRadius: 8, objectFit: "contain",
+            }} />
+          <div style={{ marginTop: 12, color: "#94a3b8", fontSize: 11 }}>
+            탭하여 닫기
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ───── 탭: 당일 발굴 ─────
-function TodayTab({ todayAll, verifyMap, scanning, verifying, scanError, scanTime, onScan, onClickSig }) {
+function TodayTab({ todayAll, verifyMap, scanning, verifying, scanError, scanTime, onScan, onClickSig, customCriteria }) {
   const matched = useMemo(() => {
     if (!todayAll) return null;
     const out = {};
     for (const t of PATTERN_TYPES) {
+      const c = customCriteria[t.id] || DEFAULT_CRITERIA[t.id];
       const list = todayAll
         .map(s => {
-          const v = verifyMap[s.code];  // 검증된 데이터 (있으면)
+          const v = verifyMap[s.code];
           const sig = toSig(s, v);
-          if (!matchType(sig, t.criteria, t.id)) return null;
-          const sync = calcSyncDetail(sig, t.criteria);
-          return { ...sig, raw: s, sync, type: t };
+          if (!matchType(sig, c, t.id)) return null;
+          const sync = calcSyncDetail(sig, c);
+          return { ...sig, raw: s, sync, type: t, criteria: c };
         })
         .filter(Boolean)
         .sort((a, b) => b.sync.total - a.sync.total)
@@ -371,7 +606,7 @@ function TodayTab({ todayAll, verifyMap, scanning, verifying, scanError, scanTim
       out[t.id] = list;
     }
     return out;
-  }, [todayAll, verifyMap]);
+  }, [todayAll, verifyMap, customCriteria]);
 
   const verifyCount = Object.keys(verifyMap).length;
   const targetCount = todayAll ? todayAll.filter(s => (s.score||0) >= 6).length : 0;
@@ -925,114 +1160,119 @@ function BacktestResults({ result, type, tp, sl, budget }) {
 
 // ───── 탭: 타입 정의 ─────
 // 차트 정보 → 5타입 매칭% + 사유 (사용자 입력 기반)
-function matchAllTypes(input) {
+function matchAllTypes(input, customCriteria) {
   return PATTERN_TYPES.map(t => {
-    const c = t.criteria;
+    const c = (customCriteria && customCriteria[t.id]) || DEFAULT_CRITERIA[t.id];
     const reasons = [];
     let score = 0;
+    const total = 100;
 
-    // 1. 등락률 (30점)
+    // 1. 등락률 (20점)
     if (input.ch >= c.chMin && input.ch <= c.chMax) {
-      score += 30;
+      score += 20;
       reasons.push({ ok: true, text: `등락률 +${input.ch}% (범위 +${c.chMin}~${c.chMax}%) ✓` });
     } else {
-      const dist = Math.min(
-        Math.abs(input.ch - c.chMin),
-        Math.abs(input.ch - c.chMax)
-      );
-      const partial = Math.max(0, 30 * (1 - dist / 10));
-      score += partial;
-      reasons.push({
-        ok: false,
-        text: `등락률 +${input.ch}% (범위 +${c.chMin}~${c.chMax}% 벗어남) ✗`,
-      });
+      const dist = Math.min(Math.abs(input.ch - c.chMin), Math.abs(input.ch - c.chMax));
+      score += Math.max(0, 20 * (1 - dist / 10));
+      reasons.push({ ok: false, text: `등락률 +${input.ch}% (범위 +${c.chMin}~${c.chMax}% 벗어남) ✗` });
     }
 
-    // 2. 거래대금 (25점)
+    // 2. 거래대금 (15점)
     if (input.amt >= c.amtMin && input.amt <= c.amtMax) {
-      score += 25;
+      score += 15;
       reasons.push({ ok: true, text: `거래대금 ${input.amt}억 (범위 ${c.amtMin}~${c.amtMax === 99999 ? "무제한" : c.amtMax+"억"}) ✓` });
     } else if (input.amt > 0) {
-      const ratio = input.amt < c.amtMin
-        ? input.amt / c.amtMin
-        : (c.amtMax === 99999 ? 1 : c.amtMax / input.amt);
-      score += 25 * Math.max(0, ratio);
-      reasons.push({
-        ok: false,
-        text: `거래대금 ${input.amt}억 (범위 ${c.amtMin}~${c.amtMax === 99999 ? "무제한" : c.amtMax+"억"} 벗어남) ✗`,
-      });
+      const ratio = input.amt < c.amtMin ? input.amt / c.amtMin : (c.amtMax === 99999 ? 1 : c.amtMax / input.amt);
+      score += 15 * Math.max(0, ratio);
+      reasons.push({ ok: false, text: `거래대금 ${input.amt}억 (범위 벗어남) ✗` });
     }
 
-    // 3. 60일 신고가 (15점)
-    if (c.h60 === true) {
-      if (input.h60) {
-        score += 15;
-        reasons.push({ ok: true, text: `60일 신고가 갱신 (필수) ✓` });
-      } else {
-        reasons.push({ ok: false, text: `60일 신고가 미갱신 (필수인데) ✗` });
-      }
-    } else if (c.h60 === false) {
-      if (!input.h60) {
-        score += 15;
-        reasons.push({ ok: true, text: `60일 신고가 X (박스권/하락) ✓` });
-      } else {
-        reasons.push({ ok: false, text: `60일 신고가 갱신 (박스권 X) ✗` });
-      }
+    // 3. 60일 신고가 (10점)
+    if (c.h60 === "req") {
+      if (input.h60) { score += 10; reasons.push({ ok: true, text: `60일 신고가 갱신 (필수) ✓` }); }
+      else reasons.push({ ok: false, text: `60일 신고가 미갱신 (필수인데) ✗` });
+    } else if (c.h60 === "no") {
+      if (!input.h60) { score += 10; reasons.push({ ok: true, text: `60일 신고가 X (박스권) ✓` }); }
+      else reasons.push({ ok: false, text: `60일 신고가 갱신 (박스권 X) ✗` });
+    } else { score += 5; reasons.push({ ok: true, text: `60일 신고가: 무관` }); }
+
+    // 4. 120일 신고가 (8점)
+    if (c.h120 === "req") {
+      if (input.h120) { score += 8; reasons.push({ ok: true, text: `120일 신고가 갱신 ✓` }); }
+      else reasons.push({ ok: false, text: `120일 신고가 미갱신 ✗` });
+    } else if (c.h120 === "no") {
+      if (!input.h120) { score += 8; reasons.push({ ok: true, text: `120일 신고가 X ✓` }); }
+      else reasons.push({ ok: false, text: `120일 신고가 갱신 ✗` });
+    } else { score += 4; }
+
+    // 5. 박스권 (10점)
+    if (c.isBox === "req") {
+      if (input.aiBox || input.isBox) { score += 10; reasons.push({ ok: true, text: `박스권 ✓` }); }
+      else reasons.push({ ok: false, text: `박스권 아님 (필수인데) ✗` });
+    } else if (c.isBox === "no") {
+      if (!input.aiBox && !input.isBox) { score += 10; reasons.push({ ok: true, text: `박스권 X ✓` }); }
+      else reasons.push({ ok: false, text: `박스권 (필수 X) ✗` });
+    } else { score += 5; }
+
+    // 6. 매물대 돌파 (8점)
+    if (c.isBreakout === "req") {
+      if (input.aiBreakout || input.isBreakout) { score += 8; reasons.push({ ok: true, text: `매물대 돌파 ✓` }); }
+      else reasons.push({ ok: false, text: `매물대 돌파 X (필수) ✗` });
+    } else if (c.isBreakout === "no") {
+      if (!input.aiBreakout && !input.isBreakout) score += 8;
+    } else { score += 4; }
+
+    // 7. 정배열 (8점)
+    if (c.isUptrend === "req") {
+      if (input.isUptrend) { score += 8; reasons.push({ ok: true, text: `정배열 ✓` }); }
+      else reasons.push({ ok: false, text: `정배열 X (필수) ✗` });
+    } else if (c.isUptrend === "no") {
+      if (!input.isUptrend) score += 8;
+    } else { score += 4; }
+
+    // 8. V자 반등 (6점)
+    if (c.isVRev === "req") {
+      if (input.aiVrev || input.isVRev) { score += 6; reasons.push({ ok: true, text: `V자 반등 ✓` }); }
+      else reasons.push({ ok: false, text: `V자 반등 X (필수) ✗` });
+    } else if (c.isVRev === "no") {
+      if (!input.aiVrev && !input.isVRev) score += 6;
+    } else { score += 3; }
+
+    // 9. 시그널 빈도 (6점)
+    const sigs = input.sigs || 0;
+    if (sigs >= c.sigsMin && sigs <= (c.sigsMax || 99)) {
+      score += 6;
+      if (c.sigsMin > 0) reasons.push({ ok: true, text: `시그널 ${sigs}회 (${c.sigsMin}회+) ✓` });
     } else {
-      score += 7;  // 무관 (절반)
+      reasons.push({ ok: false, text: `시그널 ${sigs}회 (요건 ${c.sigsMin}~${c.sigsMax}회) ✗` });
     }
 
-    // 4. 120일 신고가 (10점)
-    if (c.h120 === false && !input.h120) {
-      score += 10;
-      reasons.push({ ok: true, text: `120일 신고가 X (장기 횡보/하락) ✓` });
-    } else if (c.h120 === false && input.h120) {
-      reasons.push({ ok: false, text: `120일 신고가 갱신 (장기 추세) ✗` });
-    } else {
-      score += 5;
-    }
-
-    // 5. 시그널 빈도 (10점)
-    if (c.sigsMin != null) {
-      if (input.sigs >= c.sigsMin) {
-        score += 10;
-        reasons.push({ ok: true, text: `시그널 ${input.sigs}회 (${c.sigsMin}회+ 필수) ✓` });
-      } else {
-        reasons.push({ ok: false, text: `시그널 ${input.sigs}회 (${c.sigsMin}회+ 필요) ✗` });
-      }
-    } else {
-      score += 5;
-    }
-
-    // 6. 수급 (10점)
-    if (input.iv === "기+외") {
-      score += 10;
-      reasons.push({ ok: true, text: `수급 기+외 쌍매수 (최강) ✓` });
-    } else if (input.iv === "외만") {
-      score += 7;
-      reasons.push({ ok: true, text: `수급 외인 매수 (양호)` });
-    } else if (input.iv === "기만") {
+    // 10. 윗꼬리 (4점)
+    if ((input.wick || 0) <= (c.wickMax || 10)) {
       score += 4;
-      reasons.push({ ok: false, text: `수급 기관만 (약함)` });
     } else {
-      reasons.push({ ok: false, text: `수급 약함 ✗` });
+      reasons.push({ ok: false, text: `윗꼬리 ${input.wick}% (max ${c.wickMax}%) ✗` });
     }
 
-    return {
-      typeId: t.id, type: t,
-      match: Math.round(score),
-      reasons,
-    };
+    // 11. 수급 (5점)
+    if (c.ivAllowed && c.ivAllowed.includes(input.iv)) {
+      const ivScore = input.iv === "기+외" ? 5 : input.iv === "외만" ? 4 : input.iv === "기만" ? 2 : 1;
+      score += ivScore;
+      reasons.push({ ok: true, text: `수급 ${input.iv} ✓` });
+    } else {
+      reasons.push({ ok: false, text: `수급 ${input.iv} (허용 X) ✗` });
+    }
+
+    return { typeId: t.id, type: t, match: Math.round(score), reasons };
   }).sort((a, b) => b.match - a.match);
 }
 
-function DefinitionsTab() {
-  // 사용자 추가 차트 (window.storage)
-  const [userPatterns, setUserPatterns] = useState({});
-
-  // 업로드 입력 상태
+function DefinitionsTab({
+  customCriteria, userPatterns,
+  onSaveCriteria, onResetCriteria, onAutoAdjust,
+  onSaveUserPattern, onDeleteUserPattern, onZoomImg,
+}) {
   const [imgB64, setImgB64] = useState("");
-  const [imgFile, setImgFile] = useState(null);
   const [stockName, setStockName] = useState("");
   const [ch, setCh] = useState(15);
   const [amt, setAmt] = useState(800);
@@ -1041,57 +1281,29 @@ function DefinitionsTab() {
   const [sigs, setSigs] = useState(2);
   const [wick, setWick] = useState(2);
   const [iv, setIv] = useState("기+외");
-
-  const [results, setResults] = useState(null);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const [aiError, setAiError] = useState(null);
-  const [aiSummary, setAiSummary] = useState(null);  // AI 분석 요약
+  const [aiSummary, setAiSummary] = useState(null);
+  const [results, setResults] = useState(null);
 
-  // window.storage 로드
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.storage) return;
-    (async () => {
-      try {
-        const list = await window.storage.list("upat:");
-        if (!list || !list.keys) return;
-        const out = {};
-        for (const k of list.keys) {
-          try {
-            const r = await window.storage.get(k);
-            if (r) {
-              const p = JSON.parse(r.value);
-              if (!out[p.typeId]) out[p.typeId] = [];
-              out[p.typeId].push({ ...p, key: k });
-            }
-          } catch (e) {}
-        }
-        setUserPatterns(out);
-      } catch (e) {}
-    })();
-  }, []);
+  // 어떤 타입의 기준 편집 영역이 펼쳐져 있는지
+  const [editingType, setEditingType] = useState(null);
 
   function onFile(e) {
     const f = e.target.files[0];
     if (!f) return;
-    setImgFile(f);
     const r = new FileReader();
     r.onload = (ev) => setImgB64(ev.target.result);
     r.readAsDataURL(f);
   }
 
-  // 🔥 AI 자동 분석 (analyze.js → Anthropic Vision)
   async function aiAnalyze() {
-    if (!imgB64) {
-      alert("먼저 차트 이미지를 업로드하세요");
-      return;
-    }
+    if (!imgB64) { alert("먼저 차트 이미지를 업로드하세요"); return; }
     setAiAnalyzing(true);
     setAiError(null);
     setAiSummary(null);
     setResults(null);
-
     try {
-      // base64에서 헤더 분리
       const m = imgB64.match(/^data:(image\/[a-z]+);base64,(.+)$/);
       if (!m) throw new Error("이미지 형식 오류");
       const mediaType = m[1];
@@ -1099,32 +1311,30 @@ function DefinitionsTab() {
 
       const prompt = `이 한국 주식 일봉 차트를 분석해서 JSON으로만 답하세요. 마크다운 없이 순수 JSON만.
 
-차트는 일봉 차트입니다. 가장 우측의 큰 양봉(빨간 봉)이 시그널입니다.
+차트는 일봉 차트이며, 가장 우측의 큰 양봉(빨간 봉)이 시그널입니다.
 
 다음 정보 추출:
 - ch: 시그널 양봉의 등락률 % (예: 16.67)
-- amt: 시그널 일자 거래대금 (억 단위, 화면 하단 거래대금 막대 보고 추정)
+- amt: 시그널 일자 거래대금 (억 단위)
 - h60: 시그널 직전 60일 동안 최고가를 갱신했는지 (true/false)
 - h120: 시그널 직전 120일 동안 최고가를 갱신했는지 (true/false)
-- box: 박스권 차트인지 (가격이 좁은 범위에서 횡보. true/false)
-- box_months: 박스권 기간 (개월수, 박스권이 아니면 0)
+- box: 박스권 차트인지 (true/false)
+- box_months: 박스권 기간 (개월수, 0이면 박스권 아님)
 - left_signal: 좌측에 비슷한 큰 양봉 시그널이 있는지 (true/false)
 - left_signal_count: 좌측 시그널 횟수 (없으면 0)
 - vrev: V자 반등인지 (1년+ 하락 후 반등)
-- breakout: 박스권 매물대를 정확히 돌파했는지
-- iv: 수급 추정 ("기+외", "외만", "기만", "둘다-" 중 하나, 차트만으론 모를 수 있으니 거래대금 폭증이면 "기+외"로 추정)
-- wick: 윗꼬리 % (시그널 봉의 (고가-종가)/시가 * 100)
-- description: 차트 한 줄 설명 (예: "11개월 박스권 후 거래대금 30배 폭증 양봉")
+- breakout: 박스권 매물대를 돌파했는지
+- iv: 수급 추정 ("기+외", "외만", "기만", "둘다-")
+- wick: 윗꼬리 % (시그널 봉)
+- description: 차트 한 줄 설명
 
-JSON 예:
-{"ch":16.67,"amt":1108,"h60":false,"h120":false,"box":true,"box_months":11,"left_signal":false,"left_signal_count":0,"vrev":false,"breakout":true,"iv":"기+외","wick":2,"description":"11개월 박스권 후 거래대금 30배 폭증 양봉"}`;
+JSON 예: {"ch":16.67,"amt":1108,"h60":false,"h120":false,"box":true,"box_months":11,"left_signal":false,"left_signal_count":0,"vrev":false,"breakout":true,"iv":"기+외","wick":2,"description":"11개월 박스권 후 거래대금 30배 폭증 양봉"}`;
 
       const res = await fetch(SECTOR_API + "/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
+          model: "claude-sonnet-4-20250514", max_tokens: 1000,
           messages: [{
             role: "user",
             content: [
@@ -1136,56 +1346,34 @@ JSON 예:
       });
       const json = await res.json();
       if (json.error) throw new Error(json.error);
-
-      // 응답에서 JSON 추출
-      const text = (json.content || []).filter(c => c.type === "text")
-        .map(c => c.text).join("");
+      const text = (json.content || []).filter(c => c.type === "text").map(c => c.text).join("");
       let parsed;
       try {
-        // 마크다운 코드 펜스 제거
         const cleaned = text.replace(/```json|```/g, "").trim();
         parsed = JSON.parse(cleaned);
       } catch (e) {
         throw new Error("JSON 파싱 실패: " + text.slice(0, 200));
       }
 
-      // 분석 결과를 폼에 자동 채우기 (사용자가 수정 가능)
       if (parsed.ch != null) setCh(parsed.ch);
       if (parsed.amt != null) setAmt(parsed.amt);
       if (parsed.h60 != null) setH60(!!parsed.h60);
       if (parsed.h120 != null) setH120(!!parsed.h120);
       if (parsed.iv) setIv(parsed.iv);
       if (parsed.wick != null) setWick(parsed.wick);
-      // 시그널 빈도: 좌측 시그널 + 1 (현재 시그널 포함)
       if (parsed.left_signal_count != null) setSigs((parsed.left_signal_count || 0) + 1);
 
-      // AI 요약 저장 (결과 카드에 표시)
-      setAiSummary({
-        ch: parsed.ch, amt: parsed.amt,
-        h60: parsed.h60, h120: parsed.h120,
-        box: parsed.box, box_months: parsed.box_months,
-        left_signal: parsed.left_signal, left_signal_count: parsed.left_signal_count,
-        vrev: parsed.vrev, breakout: parsed.breakout,
-        iv: parsed.iv, wick: parsed.wick,
-        description: parsed.description,
-      });
+      setAiSummary(parsed);
 
-      // 즉시 5타입 매칭 (분석 결과 기반)
       const input = {
-        ch: parsed.ch ?? ch,
-        amt: parsed.amt ?? amt,
-        h60: !!parsed.h60,
-        h120: !!parsed.h120,
+        ch: parsed.ch ?? ch, amt: parsed.amt ?? amt,
+        h60: !!parsed.h60, h120: !!parsed.h120,
         sigs: (parsed.left_signal_count || 0) + 1,
-        wick: parsed.wick ?? wick,
-        iv: parsed.iv || iv,
-        // AI가 직접 판단한 패턴 신호 (가산점)
-        aiBox: !!parsed.box,
-        aiBreakout: !!parsed.breakout,
-        aiVrev: !!parsed.vrev,
+        wick: parsed.wick ?? wick, iv: parsed.iv || iv,
+        aiBox: !!parsed.box, aiBreakout: !!parsed.breakout, aiVrev: !!parsed.vrev,
         aiLeftSignal: !!parsed.left_signal,
       };
-      const ranked = matchAllTypes(input);
+      const ranked = matchAllTypes(input, customCriteria);
       setResults({ input, ranked });
     } catch (e) {
       setAiError(e.message);
@@ -1194,26 +1382,21 @@ JSON 예:
     }
   }
 
-  // 수동 분석 (슬라이더 입력만으로)
   function manualAnalyze() {
     const input = {
       ch: parseFloat(ch), amt: parseFloat(amt),
       h60, h120, sigs: parseInt(sigs) || 0,
       wick: parseFloat(wick), iv,
     };
-    const ranked = matchAllTypes(input);
+    const ranked = matchAllTypes(input, customCriteria);
     setResults({ input, ranked });
     setAiSummary(null);
   }
 
   async function saveToType(typeId) {
-    if (typeof window === "undefined" || !window.storage) {
-      alert("저장 기능 사용 불가");
-      return;
-    }
-    const id = "upat:" + typeId + "_" + Date.now();
     const pattern = {
-      typeId, name: stockName || (aiSummary?.description?.slice(0, 30)) || "이름 없음",
+      typeId,
+      name: stockName || (aiSummary && aiSummary.description ? aiSummary.description.slice(0, 30) : "이름 없음"),
       img: imgB64,
       ch: parseFloat(ch), amt: parseFloat(amt),
       h60, h120, sigs: parseInt(sigs) || 0,
@@ -1221,52 +1404,25 @@ JSON 예:
       aiSummary,
       addedAt: new Date().toISOString(),
     };
-    try {
-      await window.storage.set(id, JSON.stringify(pattern));
-      setUserPatterns(prev => {
-        const next = { ...prev };
-        if (!next[typeId]) next[typeId] = [];
-        next[typeId] = [...next[typeId], { ...pattern, key: id }];
-        return next;
-      });
-      alert(`✅ TYPE ${typeId}에 추가됨`);
-    } catch (e) {
-      alert("저장 실패: " + e.message);
-    }
-  }
-
-  async function deleteUserPattern(key, typeId) {
-    if (!confirm("이 학습 데이터를 삭제하시겠습니까?")) return;
-    if (typeof window !== "undefined" && window.storage) {
-      try { await window.storage.delete(key); } catch (e) {}
-    }
-    setUserPatterns(prev => {
-      const next = { ...prev };
-      if (next[typeId]) {
-        next[typeId] = next[typeId].filter(p => p.key !== key);
-      }
-      return next;
-    });
+    await onSaveUserPattern(pattern);
+    alert("✅ TYPE " + typeId + "에 추가됨");
   }
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      {/* 이미지 업로드 + AI 자동 분석 */}
+      {/* AI 자동 분석 */}
       <div style={{
         padding: 14, background: "#1e293b",
         border: "2px solid #fbbf24", borderRadius: 10,
       }}>
-        <div style={{
-          fontSize: 16, fontWeight: 800, color: "#fbbf24", marginBottom: 4,
-        }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "#fbbf24", marginBottom: 4 }}>
           🤖 AI 차트 분석
         </div>
         <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-          차트 업로드 → AI(Claude Vision)가 자동 분석 → 5타입 매칭 ·
+          차트 업로드 → AI가 자동 분석 → 5타입 매칭 ·
           <b style={{color:"#10b981"}}> 95%+면 학습 데이터 추가</b>
         </div>
 
-        {/* 이미지 업로드 */}
         <input type="file" accept="image/*" onChange={onFile}
           style={{
             width: "100%", padding: 10, fontSize: 13,
@@ -1280,16 +1436,15 @@ JSON 예:
             background: "#0f172a", borderRadius: 6, textAlign: "center",
           }}>
             <img src={imgB64} alt="차트"
-              style={{ maxWidth: "100%", maxHeight: 250, borderRadius: 4 }} />
+              onClick={() => onZoomImg({ img: imgB64, name: stockName || "업로드한 차트" })}
+              style={{ maxWidth: "100%", maxHeight: 250, borderRadius: 4, cursor: "zoom-in" }} />
           </div>
         )}
 
-        {/* AI 분석 버튼 */}
         <button onClick={aiAnalyze} disabled={!imgB64 || aiAnalyzing}
           style={{
             width: "100%", padding: "14px",
-            background: aiAnalyzing ? "#475569" :
-                        !imgB64 ? "#334155" : "#fbbf24",
+            background: aiAnalyzing ? "#475569" : !imgB64 ? "#334155" : "#fbbf24",
             color: !imgB64 ? "#64748b" : "#0f172a",
             border: "none", borderRadius: 8,
             fontSize: 15, fontWeight: 800,
@@ -1311,7 +1466,6 @@ JSON 예:
           </div>
         )}
 
-        {/* AI 분석 요약 */}
         {aiSummary && (
           <div style={{
             padding: 12, background: "#0f172a",
@@ -1330,7 +1484,7 @@ JSON 예:
               <div>등락: <b style={{color:"#10b981"}}>+{aiSummary.ch}%</b></div>
               <div>거래대금: <b>{aiSummary.amt}억</b></div>
               <div>박스권: <b style={{color:aiSummary.box?"#10b981":"#94a3b8"}}>
-                {aiSummary.box ? `O (${aiSummary.box_months}개월)` : "X"}
+                {aiSummary.box ? "O (" + aiSummary.box_months + "개월)" : "X"}
               </b></div>
               <div>매물대 돌파: <b style={{color:aiSummary.breakout?"#ec4899":"#94a3b8"}}>
                 {aiSummary.breakout ? "O" : "X"}
@@ -1339,7 +1493,7 @@ JSON 예:
                 {aiSummary.vrev ? "O" : "X"}
               </b></div>
               <div>좌측 시그널: <b style={{color:aiSummary.left_signal?"#fbbf24":"#94a3b8"}}>
-                {aiSummary.left_signal ? `${aiSummary.left_signal_count}회` : "X"}
+                {aiSummary.left_signal ? aiSummary.left_signal_count + "회" : "X"}
               </b></div>
               <div>60일 신고가: <b>{aiSummary.h60?"O":"X"}</b></div>
               <div>120일 신고가: <b>{aiSummary.h120?"O":"X"}</b></div>
@@ -1349,39 +1503,30 @@ JSON 예:
           </div>
         )}
 
-        {/* 수동 입력 (선택) */}
-        <details style={{ marginBottom: 10 }}>
-          <summary style={{
-            fontSize: 12, color: "#94a3b8", cursor: "pointer",
-            fontWeight: 700, padding: "6px 0",
-          }}>
+        {/* 종목명 입력 */}
+        <input type="text" value={stockName} onChange={e => setStockName(e.target.value)}
+          placeholder="종목명 (학습 추가 시 사용)"
+          style={{
+            width: "100%", padding: 10, fontSize: 13,
+            background: "#0f172a", color: "#fff",
+            border: "1px solid #475569", borderRadius: 6,
+            marginBottom: 10, boxSizing: "border-box",
+          }} />
+
+        <details style={{ marginBottom: 6 }}>
+          <summary style={{ fontSize: 12, color: "#94a3b8", cursor: "pointer", fontWeight: 700 }}>
             ✏️ 수동 입력 (AI 결과 수정 또는 직접 입력)
           </summary>
           <div style={{ marginTop: 8 }}>
-            <input type="text" value={stockName} onChange={e => setStockName(e.target.value)}
-              placeholder="종목명 (선택)"
-              style={{
-                width: "100%", padding: 10, fontSize: 13,
-                background: "#0f172a", color: "#fff",
-                border: "1px solid #475569", borderRadius: 6,
-                marginBottom: 10, boxSizing: "border-box",
-              }} />
             <SliderRow label="등락률" value={ch}
-              options={[5, 8, 10, 13, 15, 18, 22, 26, 29]}
-              onChange={setCh} unit="%" color="#10b981" />
+              options={[5,8,10,13,15,18,22,26,29]} onChange={setCh} unit="%" color="#10b981" />
             <SliderRow label="거래대금" value={amt}
-              options={[100, 300, 500, 800, 1500, 3000, 5000, 10000]}
-              onChange={setAmt} unit="억" color="#fbbf24" />
+              options={[100,300,500,800,1500,3000,5000,10000]} onChange={setAmt} unit="억" color="#fbbf24" />
             <SliderRow label="시그널 빈도" value={sigs}
-              options={[1, 2, 3, 5, 10, 20]}
-              onChange={setSigs} unit="회" color="#0ea5e9" />
+              options={[1,2,3,5,10,20]} onChange={setSigs} unit="회" color="#0ea5e9" />
             <SliderRow label="윗꼬리" value={wick}
-              options={[1, 2, 3, 5, 10]}
-              onChange={setWick} unit="%" color="#a855f7" />
-            <div style={{
-              display: "flex", gap: 12, padding: "10px 0",
-              fontSize: 13, color: "#cbd5e1", flexWrap: "wrap",
-            }}>
+              options={[1,2,3,5,10]} onChange={setWick} unit="%" color="#a855f7" />
+            <div style={{ display: "flex", gap: 12, padding: "10px 0", fontSize: 13, color: "#cbd5e1", flexWrap: "wrap" }}>
               <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <input type="checkbox" checked={h60} onChange={e => setH60(e.target.checked)}
                   style={{ width: 18, height: 18 }} />
@@ -1402,7 +1547,7 @@ JSON 예:
                       flex: 1, minWidth: 70,
                       background: iv === opt ? "#10b981" : "#0f172a",
                       color: iv === opt ? "#fff" : "#94a3b8",
-                      border: `1px solid ${iv === opt ? "#10b981" : "#334155"}`,
+                      border: "1px solid " + (iv === opt ? "#10b981" : "#334155"),
                       borderRadius: 6, padding: "8px 10px",
                       fontSize: 13, fontWeight: 700, cursor: "pointer",
                     }}>
@@ -1430,9 +1575,7 @@ JSON 예:
           padding: 14, background: "#1e293b",
           border: "1px solid #334155", borderRadius: 10,
         }}>
-          <div style={{
-            fontSize: 14, fontWeight: 800, color: "#fbbf24", marginBottom: 10,
-          }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "#fbbf24", marginBottom: 10 }}>
             🎯 5타입 매칭 결과 (높은 순)
           </div>
           <div style={{ display: "grid", gap: 10 }}>
@@ -1446,86 +1589,151 @@ JSON 예:
         </div>
       )}
 
-      {/* 5타입 정의 + 사용자 추가 차트 */}
+      {/* 5타입 정의 + 편집 + 학습 차트 그리드 */}
       {PATTERN_TYPES.map(t => {
+        const c = customCriteria[t.id] || DEFAULT_CRITERIA[t.id];
         const userList = userPatterns[t.id] || [];
+        const isCustomized = JSON.stringify(c) !== JSON.stringify(DEFAULT_CRITERIA[t.id]);
+        const editing = editingType === t.id;
+
         return (
           <div key={t.id} style={{
             padding: 14, background: "#1e293b",
-            border: `2px solid ${t.color}`, borderRadius: 10,
+            border: "2px solid " + t.color, borderRadius: 10,
           }}>
             <div style={{
               fontSize: 18, fontWeight: 800, color: t.color, marginBottom: 6,
+              display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6,
             }}>
-              {t.icon} TYPE {t.id} · {t.name}
-              {userList.length > 0 && (
-                <span style={{
-                  fontSize: 11, color: "#10b981",
-                  marginLeft: 8, fontWeight: 700,
-                }}>
-                  +{userList.length} 학습됨
-                </span>
-              )}
+              <div>
+                {t.icon} TYPE {t.id} · {t.name}
+                {userList.length > 0 && (
+                  <span style={{
+                    fontSize: 11, color: "#10b981",
+                    marginLeft: 8, fontWeight: 700,
+                  }}>
+                    +{userList.length} 학습됨
+                  </span>
+                )}
+                {isCustomized && (
+                  <span style={{
+                    fontSize: 10, color: "#fbbf24",
+                    marginLeft: 6, fontWeight: 700,
+                    border: "1px solid #fbbf24", padding: "1px 5px", borderRadius: 3,
+                  }}>
+                    수정됨
+                  </span>
+                )}
+              </div>
             </div>
+
             <div style={{ fontSize: 13, color: "#cbd5e1", marginBottom: 8 }}>
               {t.desc}
             </div>
+
+            {/* 기준 표시 */}
             <div style={{
               padding: 10, background: "#0f172a", borderRadius: 6,
               fontSize: 12, color: "#94a3b8", marginBottom: 8,
             }}>
-              <div><b style={{color:"#fbbf24"}}>조건</b></div>
-              <div>등락률: +{t.criteria.chMin}% ~ +{t.criteria.chMax}%</div>
-              <div>거래대금: {t.criteria.amtMin}억 ~ {t.criteria.amtMax === 99999 ? "무제한" : t.criteria.amtMax + "억"}</div>
-              <div>60일 신고가: {t.criteria.h60 === true ? "필수" : t.criteria.h60 === false ? "X" : "무관"}</div>
-              <div>120일 신고가: {t.criteria.h120 === false ? "X" : "무관"}</div>
-              {t.criteria.sigsMin && <div>시그널 빈도: {t.criteria.sigsMin}회 이상</div>}
+              <div style={{
+                display: "flex", justifyContent: "space-between",
+                alignItems: "center", marginBottom: 6,
+              }}>
+                <b style={{color:"#fbbf24"}}>📋 매칭 기준</b>
+                <button onClick={() => setEditingType(editing ? null : t.id)}
+                  style={{
+                    background: editing ? "#ef4444" : "#fbbf24",
+                    color: editing ? "#fff" : "#0f172a",
+                    border: "none", borderRadius: 4,
+                    padding: "4px 10px", fontSize: 11, fontWeight: 700,
+                    cursor: "pointer",
+                  }}>
+                  {editing ? "✗ 닫기" : "✏️ 기준 수정"}
+                </button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 12px" }}>
+                <div>등락률: +{c.chMin}~{c.chMax}%</div>
+                <div>거래대금: {c.amtMin}~{c.amtMax === 99999 ? "∞" : c.amtMax}억</div>
+                <div>60일 신고가: {labelRule(c.h60)}</div>
+                <div>120일 신고가: {labelRule(c.h120)}</div>
+                <div>박스권: {labelRule(c.isBox)}</div>
+                <div>매물대 돌파: {labelRule(c.isBreakout)}</div>
+                <div>정배열: {labelRule(c.isUptrend)}</div>
+                <div>V자 반등: {labelRule(c.isVRev)}</div>
+                <div>60일 변동폭: {c.range60Min}~{c.range60Max}%</div>
+                <div>시그널 빈도: {c.sigsMin}~{c.sigsMax === 99 ? "∞" : c.sigsMax}회</div>
+                <div>윗꼬리 max: {c.wickMax}%</div>
+                <div>수급: {c.ivAllowed.length === 4 ? "모두 허용" : c.ivAllowed.join(",")}</div>
+              </div>
             </div>
+
+            {/* 기준 편집 영역 */}
+            {editing && (
+              <CriteriaEditor
+                typeId={t.id} criteria={c}
+                userPatternCount={userList.length}
+                onSave={(newC) => { onSaveCriteria(t.id, newC); setEditingType(null); }}
+                onReset={() => { onResetCriteria(t.id); setEditingType(null); }}
+                onAutoAdjust={() => onAutoAdjust(t.id)}
+              />
+            )}
+
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
               <b style={{color:"#fbbf24"}}>기본 예시 종목</b><br/>
               {t.examples}
             </div>
 
+            {/* 학습된 사용자 차트 그리드 (큰 이미지) */}
             {userList.length > 0 && (
               <div style={{
                 marginTop: 10, padding: 10,
                 background: "#0f172a", borderRadius: 6,
                 border: "1px dashed #10b981",
               }}>
-                <div style={{
-                  fontSize: 12, color: "#10b981", fontWeight: 700, marginBottom: 8,
-                }}>
-                  🎓 학습된 사용자 차트 ({userList.length}개)
+                <div style={{ fontSize: 12, color: "#10b981", fontWeight: 700, marginBottom: 8 }}>
+                  🎓 내가 학습시킨 차트 ({userList.length}개) · 탭하여 확대
                 </div>
-                <div style={{ display: "grid", gap: 8 }}>
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+                  gap: 8,
+                }}>
                   {userList.map(u => (
                     <div key={u.key} style={{
-                      padding: 8, background: "#1e293b",
-                      borderRadius: 6, display: "flex",
-                      gap: 10, alignItems: "center",
+                      background: "#1e293b", borderRadius: 6,
+                      overflow: "hidden", position: "relative",
                     }}>
                       {u.img && (
                         <img src={u.img} alt={u.name}
+                          onClick={() => onZoomImg(u)}
                           style={{
-                            width: 80, height: 50, objectFit: "cover",
-                            borderRadius: 4, flexShrink: 0,
+                            width: "100%", height: 90, objectFit: "cover",
+                            cursor: "zoom-in", display: "block",
                           }} />
                       )}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "#fbbf24" }}>
+                      <div style={{ padding: "6px 8px" }}>
+                        <div style={{
+                          fontSize: 11, fontWeight: 700, color: "#fbbf24",
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>
                           {u.name}
                         </div>
-                        <div style={{ fontSize: 11, color: "#94a3b8" }}>
+                        <div style={{ fontSize: 10, color: "#94a3b8" }}>
                           +{u.ch}% · {u.amt}억 · {u.iv}
                         </div>
                       </div>
-                      <button onClick={() => deleteUserPattern(u.key, t.id)}
+                      <button onClick={() => {
+                        if (confirm("삭제하시겠습니까?")) onDeleteUserPattern(u.key, t.id);
+                      }}
                         style={{
-                          background: "transparent", color: "#ef4444",
-                          border: "1px solid #ef4444", borderRadius: 4,
-                          padding: "4px 8px", fontSize: 11, cursor: "pointer",
+                          position: "absolute", top: 4, right: 4,
+                          background: "rgba(239,68,68,0.9)", color: "#fff",
+                          border: "none", borderRadius: 4,
+                          width: 22, height: 22, fontSize: 11,
+                          cursor: "pointer", fontWeight: 700,
                         }}>
-                        삭제
+                        ×
                       </button>
                     </div>
                   ))}
@@ -1535,6 +1743,159 @@ JSON 예:
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function labelRule(r) {
+  if (r === "req") return "필수";
+  if (r === "no") return "X (금지)";
+  return "무관";
+}
+
+// 풀세트 필터 편집 UI
+function CriteriaEditor({ typeId, criteria, userPatternCount, onSave, onReset, onAutoAdjust }) {
+  const [c, setC] = useState(JSON.parse(JSON.stringify(criteria)));
+
+  function set(k, v) { setC(prev => ({ ...prev, [k]: v })); }
+  function toggleIv(opt) {
+    const has = c.ivAllowed.includes(opt);
+    set("ivAllowed", has ? c.ivAllowed.filter(x => x !== opt) : [...c.ivAllowed, opt]);
+  }
+
+  const ruleOptions = [
+    { v: "req", label: "필수", color: "#10b981" },
+    { v: "no", label: "금지", color: "#ef4444" },
+    { v: "any", label: "무관", color: "#64748b" },
+  ];
+
+  function RuleSelector({ label, value, onChange }) {
+    return (
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 4 }}>{label}</div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {ruleOptions.map(o => (
+            <button key={o.v} onClick={() => onChange(o.v)}
+              style={{
+                flex: 1, padding: "6px 8px", fontSize: 12, fontWeight: 700,
+                background: value === o.v ? o.color : "#1e293b",
+                color: value === o.v ? "#fff" : "#94a3b8",
+                border: "1px solid " + (value === o.v ? o.color : "#334155"),
+                borderRadius: 4, cursor: "pointer",
+              }}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function NumRow({ label, k1, k2, unit, max }) {
+    return (
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 4 }}>{label}</div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="number" value={c[k1]} onChange={e => set(k1, parseFloat(e.target.value) || 0)}
+            style={{
+              flex: 1, padding: 8, fontSize: 13,
+              background: "#1e293b", color: "#fff",
+              border: "1px solid #334155", borderRadius: 4, boxSizing: "border-box",
+            }} />
+          <span style={{ color: "#64748b", fontSize: 12 }}>~</span>
+          <input type="number" value={c[k2]} onChange={e => set(k2, parseFloat(e.target.value) || 0)}
+            style={{
+              flex: 1, padding: 8, fontSize: 13,
+              background: "#1e293b", color: "#fff",
+              border: "1px solid #334155", borderRadius: 4, boxSizing: "border-box",
+            }} />
+          <span style={{ color: "#94a3b8", fontSize: 11, minWidth: 28 }}>{unit}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      padding: 12, background: "#1e293b",
+      border: "1px solid #fbbf24", borderRadius: 6,
+      marginBottom: 10,
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: "#fbbf24", marginBottom: 10 }}>
+        ✏️ 풀세트 필터 — TYPE {typeId} 매칭 기준 수정
+      </div>
+
+      <NumRow label="등락률 (%)" k1="chMin" k2="chMax" unit="%" />
+      <NumRow label="거래대금 (억)" k1="amtMin" k2="amtMax" unit="억" />
+      <NumRow label="60일 변동폭 (%)" k1="range60Min" k2="range60Max" unit="%" />
+      <NumRow label="시그널 빈도 (회)" k1="sigsMin" k2="sigsMax" unit="회" />
+
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 4 }}>윗꼬리 max (%)</div>
+        <input type="number" value={c.wickMax} onChange={e => set("wickMax", parseFloat(e.target.value) || 0)}
+          style={{
+            width: "100%", padding: 8, fontSize: 13,
+            background: "#1e293b", color: "#fff",
+            border: "1px solid #334155", borderRadius: 4, boxSizing: "border-box",
+          }} />
+      </div>
+
+      <RuleSelector label="60일 신고가" value={c.h60} onChange={v => set("h60", v)} />
+      <RuleSelector label="120일 신고가" value={c.h120} onChange={v => set("h120", v)} />
+      <RuleSelector label="박스권 (60일 변동폭 작음)" value={c.isBox} onChange={v => set("isBox", v)} />
+      <RuleSelector label="매물대 돌파 (박스권 위 돌파)" value={c.isBreakout} onChange={v => set("isBreakout", v)} />
+      <RuleSelector label="정배열 추세 (60일 신고가+상승)" value={c.isUptrend} onChange={v => set("isUptrend", v)} />
+      <RuleSelector label="V자 반등 (60일 평균 미만 반등)" value={c.isVRev} onChange={v => set("isVRev", v)} />
+
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 4 }}>수급 허용 (다중 선택)</div>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {["기+외", "외만", "기만", "둘다-"].map(opt => {
+            const sel = c.ivAllowed.includes(opt);
+            return (
+              <button key={opt} onClick={() => toggleIv(opt)}
+                style={{
+                  flex: 1, minWidth: 70,
+                  padding: "6px 8px", fontSize: 12, fontWeight: 700,
+                  background: sel ? "#10b981" : "#0f172a",
+                  color: sel ? "#fff" : "#94a3b8",
+                  border: "1px solid " + (sel ? "#10b981" : "#334155"),
+                  borderRadius: 4, cursor: "pointer",
+                }}>
+                {sel ? "✓ " : ""}{opt}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 12 }}>
+        <button onClick={() => onSave(c)}
+          style={{
+            padding: "10px", background: "#10b981", color: "#fff",
+            border: "none", borderRadius: 6, fontSize: 13, fontWeight: 800, cursor: "pointer",
+          }}>
+          💾 기준 저장
+        </button>
+        <button onClick={onReset}
+          style={{
+            padding: "10px", background: "#475569", color: "#fff",
+            border: "none", borderRadius: 6, fontSize: 13, fontWeight: 800, cursor: "pointer",
+          }}>
+          🔄 기본값 복원
+        </button>
+      </div>
+
+      {userPatternCount >= 2 && (
+        <button onClick={onAutoAdjust}
+          style={{
+            width: "100%", marginTop: 8, padding: "10px",
+            background: "#fbbf24", color: "#0f172a",
+            border: "none", borderRadius: 6, fontSize: 13, fontWeight: 800, cursor: "pointer",
+          }}>
+          🎓 내 학습 차트 {userPatternCount}개로 자동 조정
+        </button>
+      )}
     </div>
   );
 }
