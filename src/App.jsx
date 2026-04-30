@@ -64,17 +64,33 @@ const PATTERN_TYPES = [
   },
 ];
 
-// 매칭 (boolean)
-function matchType(s, c) {
+// 매칭 (boolean) — 검증된 데이터(verify) 우선
+function matchType(s, c, typeId) {
   const ch = s.ch ?? s.change ?? 0;
   const amt = s.amt ?? s.amount ?? 0;
   if (ch < c.chMin || ch > c.chMax) return false;
   if (amt < c.amtMin || amt > c.amtMax) return false;
-  if (c.h60 === true && !s.h60) return false;
-  if (c.h60 === false && s.h60) return false;
-  if (c.h120 === true && !s.h120) return false;
-  if (c.h120 === false && s.h120) return false;
-  if (c.sigsMin != null && (s.sigs ?? 0) < c.sigsMin) return false;
+
+  // 검증 안 됐으면 (verify 없음) → null로 처리, 통과 (점진적 표시)
+  // 검증됐으면 정확한 판정
+  if (s.verify) {
+    // 타입별 정확한 매칭
+    if (typeId === 1) {
+      // 박스권 돌파: 박스권이어야 함
+      if (!s.isBox) return false;
+    } else if (typeId === 2) {
+      // V자 반등: 60일 평균 아래에서 반등
+      if (!s.isVRev) return false;
+    } else if (typeId === 4) {
+      // 매물대 돌파: 박스 상단 돌파
+      if (!s.isBreakout) return false;
+    } else if (typeId === 5) {
+      // 정배열 추세: h60=true 필수
+      if (!s.isUptrend) return false;
+    }
+    // TYPE 3 (시그널 재현) — sigsMin 검증
+    if (c.sigsMin != null && s.sigs < c.sigsMin) return false;
+  }
   return true;
 }
 
@@ -122,8 +138,70 @@ function calcSyncDetail(s, c) {
   };
 }
 
-// sector-api → D.pkl 형식
-function toSig(s) {
+// daily-price 호출 → 60일/120일 신고가 + 박스권 검증
+async function fetchVerify(code) {
+  try {
+    // 130일 일봉 받기 (충분히 많이)
+    const today = new Date();
+    const from = new Date(today.getTime() - 200 * 24 * 60 * 60 * 1000);
+    const fmt = d => d.getFullYear() + String(d.getMonth()+1).padStart(2,"0") + String(d.getDate()).padStart(2,"0");
+    const url = `${SECTOR_API}/daily-price?code=${code}&from=${fmt(from)}&to=${fmt(today)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.ok || !data.output || data.output.length < 30) return null;
+
+    // KIS 응답: 최신순 정렬 (output[0] = 가장 최근)
+    const rows = data.output;
+    const todayClose = rows[0].close;
+
+    // 오늘 봉 제외한 과거 60/120일 최고가 (돌파 판정용)
+    const past60 = rows.slice(1, 61);
+    const past120 = rows.slice(1, 121);
+    if (past60.length < 30) return null;
+
+    const high60 = Math.max(...past60.map(r => r.high));
+    const high120 = past120.length >= 60
+      ? Math.max(...past120.map(r => r.high))
+      : high60;
+    const low60 = Math.min(...past60.map(r => r.low));
+
+    // 60일 변동폭 (박스권 판정)
+    const range60 = (high60 - low60) / low60;
+
+    // h60/h120 (오늘 종가가 과거 신고가 근처인지)
+    const h60 = todayClose >= high60 * 0.97;
+    const h120 = todayClose >= high120 * 0.97;
+
+    // 박스권 = 변동폭 작고 + 오늘 진입가가 박스 상단 돌파 ~ 박스 안
+    const isBox = range60 < 0.45;
+
+    // 매물대 돌파 = 박스권 + 진입가가 60일 최고가 근처~돌파
+    const isBreakout = isBox && todayClose >= high60 * 0.93;
+
+    // 정배열 = h60 신고가 + 진입가 > 60일 평균
+    const avg60 = past60.reduce((s,r)=>s+r.close, 0) / past60.length;
+    const isUptrend = h60 && todayClose > avg60 * 1.05;
+
+    // V자 반등 = 60일 평균보다 낮은 곳 + 진입가가 60일 평균 미만에서 반등
+    const isVRev = !h60 && !h120 && todayClose < avg60 * 0.95;
+
+    // 시그널 빈도 (60일내 +10% 이상 양봉 횟수)
+    const sigsCount = past60.filter(r => r.rate >= 10).length;
+
+    return {
+      h60, h120, isBox, isBreakout, isUptrend, isVRev,
+      sigs: sigsCount,
+      range60: +(range60 * 100).toFixed(1),
+      high60, low60, avg60: Math.round(avg60),
+      todayClose,
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+// sector-api → 매칭용 시그널 (박스권 검증 데이터 포함)
+function toSig(s, verify) {
   return {
     name: s.name, code: s.code, market: s.market, grade: s.grade,
     ch: s.change ?? 0, amt: s.amount ?? 0,
@@ -131,7 +209,15 @@ function toSig(s) {
         s.investor === "외인" ? "외만" :
         s.investor === "기관" ? "기만" : "둘다-",
     investor: s.investor,
-    h60: false, h120: false, sigs: 5,
+    // 검증된 데이터 (없으면 null)
+    h60: verify ? verify.h60 : null,
+    h120: verify ? verify.h120 : null,
+    isBox: verify ? verify.isBox : null,
+    isBreakout: verify ? verify.isBreakout : null,
+    isUptrend: verify ? verify.isUptrend : null,
+    isVRev: verify ? verify.isVRev : null,
+    sigs: verify ? verify.sigs : 5,
+    verify,  // 원본 보관
     wick: s.wick ?? 5,
   };
 }
@@ -142,19 +228,44 @@ export default function App() {
 
   // 당일 시그널
   const [todayAll, setTodayAll] = useState(null);
+  const [verifyMap, setVerifyMap] = useState({});  // {code: {h60, h120, box, ...}}
   const [scanning, setScanning] = useState(false);
+  const [verifying, setVerifying] = useState(0);   // 0~100 검증 진행률
   const [scanError, setScanError] = useState(null);
   const [scanTime, setScanTime] = useState(null);
 
   async function runScan() {
     setScanning(true);
     setScanError(null);
+    setVerifyMap({});
+    setVerifying(0);
     try {
       const res = await fetch(SECTOR_API + "/screening");
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || "API 에러");
-      setTodayAll(data.all || []);
+      const all = data.all || [];
+      setTodayAll(all);
       setScanTime(new Date());
+
+      // 박스권 검증 (백그라운드, 점진적)
+      // 시그널 점수 6+ 종목만 (불필요한 호출 방지)
+      const targets = all.filter(s => (s.score || 0) >= 6);
+      if (targets.length === 0) return;
+
+      const results = {};
+      let done = 0;
+      // 병렬 호출 (5개씩 배치)
+      const BATCH = 5;
+      for (let i = 0; i < targets.length; i += BATCH) {
+        const batch = targets.slice(i, i + BATCH);
+        await Promise.all(batch.map(async s => {
+          const v = await fetchVerify(s.code);
+          if (v) results[s.code] = v;
+          done++;
+          setVerifying(Math.round(done / targets.length * 100));
+        }));
+        setVerifyMap({ ...results });
+      }
     } catch (e) {
       setScanError(e.message);
     } finally {
@@ -213,7 +324,9 @@ export default function App() {
         {/* 탭 내용 */}
         {tab === "today" && (
           <TodayTab
-            todayAll={todayAll} scanning={scanning} scanError={scanError}
+            todayAll={todayAll} verifyMap={verifyMap}
+            scanning={scanning} verifying={verifying}
+            scanError={scanError}
             scanTime={scanTime} onScan={runScan}
             onClickSig={setSelectedSig} />
         )}
@@ -239,15 +352,16 @@ export default function App() {
 }
 
 // ───── 탭: 당일 발굴 ─────
-function TodayTab({ todayAll, scanning, scanError, scanTime, onScan, onClickSig }) {
+function TodayTab({ todayAll, verifyMap, scanning, verifying, scanError, scanTime, onScan, onClickSig }) {
   const matched = useMemo(() => {
     if (!todayAll) return null;
     const out = {};
     for (const t of PATTERN_TYPES) {
       const list = todayAll
         .map(s => {
-          const sig = toSig(s);
-          if (!matchType(sig, t.criteria)) return null;
+          const v = verifyMap[s.code];  // 검증된 데이터 (있으면)
+          const sig = toSig(s, v);
+          if (!matchType(sig, t.criteria, t.id)) return null;
           const sync = calcSyncDetail(sig, t.criteria);
           return { ...sig, raw: s, sync, type: t };
         })
@@ -257,7 +371,10 @@ function TodayTab({ todayAll, scanning, scanError, scanTime, onScan, onClickSig 
       out[t.id] = list;
     }
     return out;
-  }, [todayAll]);
+  }, [todayAll, verifyMap]);
+
+  const verifyCount = Object.keys(verifyMap).length;
+  const targetCount = todayAll ? todayAll.filter(s => (s.score||0) >= 6).length : 0;
 
   return (
     <div>
@@ -296,6 +413,30 @@ function TodayTab({ todayAll, scanning, scanError, scanTime, onScan, onClickSig 
           color: "#fecaca", fontSize: 13,
         }}>
           ⚠️ {scanError}
+        </div>
+      )}
+
+      {/* 박스권 검증 진행률 */}
+      {todayAll && targetCount > 0 && verifying < 100 && (
+        <div style={{
+          marginBottom: 12, padding: 10, background: "#1e293b",
+          border: "1px solid #475569", borderRadius: 8,
+        }}>
+          <div style={{
+            fontSize: 12, color: "#fbbf24", marginBottom: 6,
+            display: "flex", justifyContent: "space-between",
+          }}>
+            <span>🔬 박스권 / 신고가 검증 중...</span>
+            <span>{verifyCount}/{targetCount}</span>
+          </div>
+          <div style={{
+            height: 6, background: "#0f172a", borderRadius: 3, overflow: "hidden",
+          }}>
+            <div style={{
+              width: `${verifying}%`, height: "100%",
+              background: "#fbbf24", transition: "width 0.3s",
+            }} />
+          </div>
         </div>
       )}
 
@@ -351,6 +492,19 @@ function TodayTypeCard({ type, matched, onClickSig }) {
 function SigRow({ sig, rank, onClick }) {
   const sync = sig.sync.total;
   const syncColor = sync >= 80 ? "#10b981" : sync >= 65 ? "#fbbf24" : "#94a3b8";
+  
+  // 검증 뱃지
+  const badges = [];
+  if (sig.verify) {
+    if (sig.isBox) badges.push({ text: "📦 박스권", color: "#10b981" });
+    if (sig.isBreakout) badges.push({ text: "🚀 돌파", color: "#ec4899" });
+    if (sig.isUptrend) badges.push({ text: "📈 정배열", color: "#a855f7" });
+    if (sig.isVRev) badges.push({ text: "🔄 V반등", color: "#0ea5e9" });
+    if (sig.h60 && !sig.isUptrend) badges.push({ text: "60일 고가", color: "#fbbf24" });
+  } else {
+    badges.push({ text: "⏳ 검증 중", color: "#64748b" });
+  }
+  
   return (
     <div onClick={onClick}
       style={{
@@ -396,6 +550,20 @@ function SigRow({ sig, rank, onClick }) {
             {sig.investor || sig.iv}
           </span>
           <span style={{ color: "#64748b" }}>윗꼬리 {sig.wick}%</span>
+        </div>
+        {/* 검증 뱃지 */}
+        <div style={{
+          display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap",
+        }}>
+          {badges.map((b, i) => (
+            <span key={i} style={{
+              fontSize: 10, color: b.color,
+              border: `1px solid ${b.color}`, borderRadius: 3,
+              padding: "1px 5px", fontWeight: 700,
+            }}>
+              {b.text}
+            </span>
+          ))}
         </div>
       </div>
       <div style={{ textAlign: "right" }}>
@@ -864,6 +1032,7 @@ function DefinitionsTab() {
 
   // 업로드 입력 상태
   const [imgB64, setImgB64] = useState("");
+  const [imgFile, setImgFile] = useState(null);
   const [stockName, setStockName] = useState("");
   const [ch, setCh] = useState(15);
   const [amt, setAmt] = useState(800);
@@ -874,6 +1043,9 @@ function DefinitionsTab() {
   const [iv, setIv] = useState("기+외");
 
   const [results, setResults] = useState(null);
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const [aiError, setAiError] = useState(null);
+  const [aiSummary, setAiSummary] = useState(null);  // AI 분석 요약
 
   // window.storage 로드
   useEffect(() => {
@@ -901,12 +1073,129 @@ function DefinitionsTab() {
   function onFile(e) {
     const f = e.target.files[0];
     if (!f) return;
+    setImgFile(f);
     const r = new FileReader();
     r.onload = (ev) => setImgB64(ev.target.result);
     r.readAsDataURL(f);
   }
 
-  function analyze() {
+  // 🔥 AI 자동 분석 (analyze.js → Anthropic Vision)
+  async function aiAnalyze() {
+    if (!imgB64) {
+      alert("먼저 차트 이미지를 업로드하세요");
+      return;
+    }
+    setAiAnalyzing(true);
+    setAiError(null);
+    setAiSummary(null);
+    setResults(null);
+
+    try {
+      // base64에서 헤더 분리
+      const m = imgB64.match(/^data:(image\/[a-z]+);base64,(.+)$/);
+      if (!m) throw new Error("이미지 형식 오류");
+      const mediaType = m[1];
+      const data = m[2];
+
+      const prompt = `이 한국 주식 일봉 차트를 분석해서 JSON으로만 답하세요. 마크다운 없이 순수 JSON만.
+
+차트는 일봉 차트입니다. 가장 우측의 큰 양봉(빨간 봉)이 시그널입니다.
+
+다음 정보 추출:
+- ch: 시그널 양봉의 등락률 % (예: 16.67)
+- amt: 시그널 일자 거래대금 (억 단위, 화면 하단 거래대금 막대 보고 추정)
+- h60: 시그널 직전 60일 동안 최고가를 갱신했는지 (true/false)
+- h120: 시그널 직전 120일 동안 최고가를 갱신했는지 (true/false)
+- box: 박스권 차트인지 (가격이 좁은 범위에서 횡보. true/false)
+- box_months: 박스권 기간 (개월수, 박스권이 아니면 0)
+- left_signal: 좌측에 비슷한 큰 양봉 시그널이 있는지 (true/false)
+- left_signal_count: 좌측 시그널 횟수 (없으면 0)
+- vrev: V자 반등인지 (1년+ 하락 후 반등)
+- breakout: 박스권 매물대를 정확히 돌파했는지
+- iv: 수급 추정 ("기+외", "외만", "기만", "둘다-" 중 하나, 차트만으론 모를 수 있으니 거래대금 폭증이면 "기+외"로 추정)
+- wick: 윗꼬리 % (시그널 봉의 (고가-종가)/시가 * 100)
+- description: 차트 한 줄 설명 (예: "11개월 박스권 후 거래대금 30배 폭증 양봉")
+
+JSON 예:
+{"ch":16.67,"amt":1108,"h60":false,"h120":false,"box":true,"box_months":11,"left_signal":false,"left_signal_count":0,"vrev":false,"breakout":true,"iv":"기+외","wick":2,"description":"11개월 박스권 후 거래대금 30배 폭증 양봉"}`;
+
+      const res = await fetch(SECTOR_API + "/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: mediaType, data } },
+              { type: "text", text: prompt },
+            ],
+          }],
+        }),
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error);
+
+      // 응답에서 JSON 추출
+      const text = (json.content || []).filter(c => c.type === "text")
+        .map(c => c.text).join("");
+      let parsed;
+      try {
+        // 마크다운 코드 펜스 제거
+        const cleaned = text.replace(/```json|```/g, "").trim();
+        parsed = JSON.parse(cleaned);
+      } catch (e) {
+        throw new Error("JSON 파싱 실패: " + text.slice(0, 200));
+      }
+
+      // 분석 결과를 폼에 자동 채우기 (사용자가 수정 가능)
+      if (parsed.ch != null) setCh(parsed.ch);
+      if (parsed.amt != null) setAmt(parsed.amt);
+      if (parsed.h60 != null) setH60(!!parsed.h60);
+      if (parsed.h120 != null) setH120(!!parsed.h120);
+      if (parsed.iv) setIv(parsed.iv);
+      if (parsed.wick != null) setWick(parsed.wick);
+      // 시그널 빈도: 좌측 시그널 + 1 (현재 시그널 포함)
+      if (parsed.left_signal_count != null) setSigs((parsed.left_signal_count || 0) + 1);
+
+      // AI 요약 저장 (결과 카드에 표시)
+      setAiSummary({
+        ch: parsed.ch, amt: parsed.amt,
+        h60: parsed.h60, h120: parsed.h120,
+        box: parsed.box, box_months: parsed.box_months,
+        left_signal: parsed.left_signal, left_signal_count: parsed.left_signal_count,
+        vrev: parsed.vrev, breakout: parsed.breakout,
+        iv: parsed.iv, wick: parsed.wick,
+        description: parsed.description,
+      });
+
+      // 즉시 5타입 매칭 (분석 결과 기반)
+      const input = {
+        ch: parsed.ch ?? ch,
+        amt: parsed.amt ?? amt,
+        h60: !!parsed.h60,
+        h120: !!parsed.h120,
+        sigs: (parsed.left_signal_count || 0) + 1,
+        wick: parsed.wick ?? wick,
+        iv: parsed.iv || iv,
+        // AI가 직접 판단한 패턴 신호 (가산점)
+        aiBox: !!parsed.box,
+        aiBreakout: !!parsed.breakout,
+        aiVrev: !!parsed.vrev,
+        aiLeftSignal: !!parsed.left_signal,
+      };
+      const ranked = matchAllTypes(input);
+      setResults({ input, ranked });
+    } catch (e) {
+      setAiError(e.message);
+    } finally {
+      setAiAnalyzing(false);
+    }
+  }
+
+  // 수동 분석 (슬라이더 입력만으로)
+  function manualAnalyze() {
     const input = {
       ch: parseFloat(ch), amt: parseFloat(amt),
       h60, h120, sigs: parseInt(sigs) || 0,
@@ -914,6 +1203,7 @@ function DefinitionsTab() {
     };
     const ranked = matchAllTypes(input);
     setResults({ input, ranked });
+    setAiSummary(null);
   }
 
   async function saveToType(typeId) {
@@ -923,23 +1213,23 @@ function DefinitionsTab() {
     }
     const id = "upat:" + typeId + "_" + Date.now();
     const pattern = {
-      typeId, name: stockName || "이름 없음",
+      typeId, name: stockName || (aiSummary?.description?.slice(0, 30)) || "이름 없음",
       img: imgB64,
       ch: parseFloat(ch), amt: parseFloat(amt),
       h60, h120, sigs: parseInt(sigs) || 0,
       wick: parseFloat(wick), iv,
+      aiSummary,
       addedAt: new Date().toISOString(),
     };
     try {
       await window.storage.set(id, JSON.stringify(pattern));
-      // 메모리 갱신
       setUserPatterns(prev => {
         const next = { ...prev };
         if (!next[typeId]) next[typeId] = [];
         next[typeId] = [...next[typeId], { ...pattern, key: id }];
         return next;
       });
-      alert(`✅ TYPE ${typeId}에 추가됨: ${stockName || "이름 없음"}`);
+      alert(`✅ TYPE ${typeId}에 추가됨`);
     } catch (e) {
       alert("저장 실패: " + e.message);
     }
@@ -961,7 +1251,7 @@ function DefinitionsTab() {
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      {/* 이미지 업로드 + 분석 */}
+      {/* 이미지 업로드 + AI 자동 분석 */}
       <div style={{
         padding: 14, background: "#1e293b",
         border: "2px solid #fbbf24", borderRadius: 10,
@@ -969,10 +1259,10 @@ function DefinitionsTab() {
         <div style={{
           fontSize: 16, fontWeight: 800, color: "#fbbf24", marginBottom: 4,
         }}>
-          🔍 차트 이미지로 타입 찾기
+          🤖 AI 차트 분석
         </div>
         <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
-          차트 업로드 → 차트 정보 입력 → 5타입과 매칭% 비교 ·
+          차트 업로드 → AI(Claude Vision)가 자동 분석 → 5타입 매칭 ·
           <b style={{color:"#10b981"}}> 95%+면 학습 데이터 추가</b>
         </div>
 
@@ -990,84 +1280,148 @@ function DefinitionsTab() {
             background: "#0f172a", borderRadius: 6, textAlign: "center",
           }}>
             <img src={imgB64} alt="차트"
-              style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 4 }} />
+              style={{ maxWidth: "100%", maxHeight: 250, borderRadius: 4 }} />
           </div>
         )}
 
-        {/* 종목명 */}
-        <input type="text" value={stockName} onChange={e => setStockName(e.target.value)}
-          placeholder="종목명 (예: 풍산)"
+        {/* AI 분석 버튼 */}
+        <button onClick={aiAnalyze} disabled={!imgB64 || aiAnalyzing}
           style={{
-            width: "100%", padding: 10, fontSize: 13,
-            background: "#0f172a", color: "#fff",
-            border: "1px solid #475569", borderRadius: 6,
-            marginBottom: 12, boxSizing: "border-box",
-          }} />
-
-        {/* 차트 정보 입력 */}
-        <div style={{ fontSize: 12, color: "#fbbf24", fontWeight: 700, marginBottom: 8 }}>
-          📊 차트 정보 입력
-        </div>
-
-        <SliderRow label="등락률" value={ch}
-          options={[5, 8, 10, 13, 15, 18, 22, 26, 29]}
-          onChange={setCh} unit="%" color="#10b981" />
-        <SliderRow label="거래대금" value={amt}
-          options={[100, 300, 500, 800, 1500, 3000, 5000, 10000]}
-          onChange={setAmt} unit="억" color="#fbbf24" />
-        <SliderRow label="시그널 빈도" value={sigs}
-          options={[1, 2, 3, 5, 10, 20]}
-          onChange={setSigs} unit="회" color="#0ea5e9" />
-        <SliderRow label="윗꼬리" value={wick}
-          options={[1, 2, 3, 5, 10]}
-          onChange={setWick} unit="%" color="#a855f7" />
-
-        {/* 체크박스 */}
-        <div style={{
-          display: "flex", gap: 12, padding: "10px 0",
-          fontSize: 13, color: "#cbd5e1", flexWrap: "wrap",
-        }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-            <input type="checkbox" checked={h60} onChange={e => setH60(e.target.checked)}
-              style={{ width: 18, height: 18 }} />
-            60일 신고가 갱신
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-            <input type="checkbox" checked={h120} onChange={e => setH120(e.target.checked)}
-              style={{ width: 18, height: 18 }} />
-            120일 신고가 갱신
-          </label>
-        </div>
-
-        {/* 수급 */}
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 6 }}>수급</div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {["기+외", "외만", "기만", "둘다-"].map(opt => (
-              <button key={opt} onClick={() => setIv(opt)}
-                style={{
-                  flex: 1, minWidth: 70,
-                  background: iv === opt ? "#10b981" : "#0f172a",
-                  color: iv === opt ? "#fff" : "#94a3b8",
-                  border: `1px solid ${iv === opt ? "#10b981" : "#334155"}`,
-                  borderRadius: 6, padding: "8px 10px",
-                  fontSize: 13, fontWeight: 700, cursor: "pointer",
-                }}>
-                {opt}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <button onClick={analyze}
-          style={{
-            width: "100%", padding: "12px",
-            background: "#fbbf24", color: "#0f172a",
+            width: "100%", padding: "14px",
+            background: aiAnalyzing ? "#475569" :
+                        !imgB64 ? "#334155" : "#fbbf24",
+            color: !imgB64 ? "#64748b" : "#0f172a",
             border: "none", borderRadius: 8,
-            fontSize: 15, fontWeight: 800, cursor: "pointer",
+            fontSize: 15, fontWeight: 800,
+            cursor: !imgB64 ? "not-allowed" : aiAnalyzing ? "wait" : "pointer",
+            marginBottom: 8,
           }}>
-          🎯 5타입과 비교
+          {aiAnalyzing ? "🤖 AI 분석 중... (10~20초)" :
+           !imgB64 ? "이미지를 먼저 업로드" :
+           "🤖 AI 자동 분석 → 5타입 매칭"}
         </button>
+
+        {aiError && (
+          <div style={{
+            padding: 10, background: "#7f1d1d",
+            border: "1px solid #ef4444", borderRadius: 6,
+            color: "#fecaca", fontSize: 12, marginBottom: 8,
+          }}>
+            ⚠️ AI 분석 실패: {aiError}
+          </div>
+        )}
+
+        {/* AI 분석 요약 */}
+        {aiSummary && (
+          <div style={{
+            padding: 12, background: "#0f172a",
+            border: "1px solid #fbbf24", borderRadius: 6,
+            marginBottom: 10, fontSize: 12, color: "#cbd5e1",
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", marginBottom: 6 }}>
+              🤖 AI 분석 결과
+            </div>
+            {aiSummary.description && (
+              <div style={{ marginBottom: 6, fontStyle: "italic", color: "#fff" }}>
+                "{aiSummary.description}"
+              </div>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+              <div>등락: <b style={{color:"#10b981"}}>+{aiSummary.ch}%</b></div>
+              <div>거래대금: <b>{aiSummary.amt}억</b></div>
+              <div>박스권: <b style={{color:aiSummary.box?"#10b981":"#94a3b8"}}>
+                {aiSummary.box ? `O (${aiSummary.box_months}개월)` : "X"}
+              </b></div>
+              <div>매물대 돌파: <b style={{color:aiSummary.breakout?"#ec4899":"#94a3b8"}}>
+                {aiSummary.breakout ? "O" : "X"}
+              </b></div>
+              <div>V자 반등: <b style={{color:aiSummary.vrev?"#0ea5e9":"#94a3b8"}}>
+                {aiSummary.vrev ? "O" : "X"}
+              </b></div>
+              <div>좌측 시그널: <b style={{color:aiSummary.left_signal?"#fbbf24":"#94a3b8"}}>
+                {aiSummary.left_signal ? `${aiSummary.left_signal_count}회` : "X"}
+              </b></div>
+              <div>60일 신고가: <b>{aiSummary.h60?"O":"X"}</b></div>
+              <div>120일 신고가: <b>{aiSummary.h120?"O":"X"}</b></div>
+              <div>수급: <b>{aiSummary.iv}</b></div>
+              <div>윗꼬리: <b>{aiSummary.wick}%</b></div>
+            </div>
+          </div>
+        )}
+
+        {/* 수동 입력 (선택) */}
+        <details style={{ marginBottom: 10 }}>
+          <summary style={{
+            fontSize: 12, color: "#94a3b8", cursor: "pointer",
+            fontWeight: 700, padding: "6px 0",
+          }}>
+            ✏️ 수동 입력 (AI 결과 수정 또는 직접 입력)
+          </summary>
+          <div style={{ marginTop: 8 }}>
+            <input type="text" value={stockName} onChange={e => setStockName(e.target.value)}
+              placeholder="종목명 (선택)"
+              style={{
+                width: "100%", padding: 10, fontSize: 13,
+                background: "#0f172a", color: "#fff",
+                border: "1px solid #475569", borderRadius: 6,
+                marginBottom: 10, boxSizing: "border-box",
+              }} />
+            <SliderRow label="등락률" value={ch}
+              options={[5, 8, 10, 13, 15, 18, 22, 26, 29]}
+              onChange={setCh} unit="%" color="#10b981" />
+            <SliderRow label="거래대금" value={amt}
+              options={[100, 300, 500, 800, 1500, 3000, 5000, 10000]}
+              onChange={setAmt} unit="억" color="#fbbf24" />
+            <SliderRow label="시그널 빈도" value={sigs}
+              options={[1, 2, 3, 5, 10, 20]}
+              onChange={setSigs} unit="회" color="#0ea5e9" />
+            <SliderRow label="윗꼬리" value={wick}
+              options={[1, 2, 3, 5, 10]}
+              onChange={setWick} unit="%" color="#a855f7" />
+            <div style={{
+              display: "flex", gap: 12, padding: "10px 0",
+              fontSize: 13, color: "#cbd5e1", flexWrap: "wrap",
+            }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input type="checkbox" checked={h60} onChange={e => setH60(e.target.checked)}
+                  style={{ width: 18, height: 18 }} />
+                60일 신고가
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input type="checkbox" checked={h120} onChange={e => setH120(e.target.checked)}
+                  style={{ width: 18, height: 18 }} />
+                120일 신고가
+              </label>
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 6 }}>수급</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {["기+외", "외만", "기만", "둘다-"].map(opt => (
+                  <button key={opt} onClick={() => setIv(opt)}
+                    style={{
+                      flex: 1, minWidth: 70,
+                      background: iv === opt ? "#10b981" : "#0f172a",
+                      color: iv === opt ? "#fff" : "#94a3b8",
+                      border: `1px solid ${iv === opt ? "#10b981" : "#334155"}`,
+                      borderRadius: 6, padding: "8px 10px",
+                      fontSize: 13, fontWeight: 700, cursor: "pointer",
+                    }}>
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button onClick={manualAnalyze}
+              style={{
+                width: "100%", padding: "10px",
+                background: "#0ea5e9", color: "#fff",
+                border: "none", borderRadius: 6,
+                fontSize: 13, fontWeight: 700, cursor: "pointer",
+              }}>
+              🎯 수동 입력으로 5타입 비교
+            </button>
+          </div>
+        </details>
       </div>
 
       {/* 결과 */}
@@ -1132,7 +1486,6 @@ function DefinitionsTab() {
               {t.examples}
             </div>
 
-            {/* 사용자 추가 차트 */}
             {userList.length > 0 && (
               <div style={{
                 marginTop: 10, padding: 10,
