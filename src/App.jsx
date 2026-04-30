@@ -207,7 +207,6 @@ function calcSyncDetail(s, c) {
 // daily-price 호출 → 60일/120일 신고가 + 박스권 검증
 async function fetchVerify(code) {
   try {
-    // 130일 일봉 받기 (충분히 많이)
     const today = new Date();
     const from = new Date(today.getTime() - 200 * 24 * 60 * 60 * 1000);
     const fmt = d => d.getFullYear() + String(d.getMonth()+1).padStart(2,"0") + String(d.getDate()).padStart(2,"0");
@@ -216,11 +215,10 @@ async function fetchVerify(code) {
     const data = await res.json();
     if (!data.ok || !data.output || data.output.length < 30) return null;
 
-    // KIS 응답: 최신순 정렬 (output[0] = 가장 최근)
     const rows = data.output;
     const todayClose = rows[0].close;
 
-    // 오늘 봉 제외한 과거 60/120일 최고가 (돌파 판정용)
+    // 과거 60/120일 (오늘 봉 제외)
     const past60 = rows.slice(1, 61);
     const past120 = rows.slice(1, 121);
     if (past60.length < 30) return null;
@@ -230,40 +228,79 @@ async function fetchVerify(code) {
       ? Math.max(...past120.map(r => r.high))
       : high60;
     const low60 = Math.min(...past60.map(r => r.low));
+    const avg60 = past60.reduce((s,r)=>s+r.close, 0) / past60.length;
+    const avg120 = past120.length >= 60
+      ? past120.reduce((s,r)=>s+r.close, 0) / past120.length
+      : avg60;
 
-    // 60일 변동폭 (박스권 판정)
-    const range60 = (high60 - low60) / low60;
+    // 비율 계산
+    const range60 = (high60 - low60) / low60;             // 60일 변동폭 (low60 기준)
+    const closeVsHigh = todayClose / high60;              // 진입가 / 60일 최고가
+    const closeVsAvg = todayClose / avg60;                // 진입가 / 60일 평균
+    const closeVsLow = todayClose / low60;                // 진입가 / 60일 최저가
 
-    // h60/h120 (오늘 종가가 과거 신고가 근처인지)
+    // h60/h120: 60/120일 신고가 근처
     const h60 = todayClose >= high60 * 0.97;
     const h120 = todayClose >= high120 * 0.97;
 
-    // 박스권 = 변동폭 작고 + 오늘 진입가가 박스 상단 돌파 ~ 박스 안
-    const isBox = range60 < 0.45;
+    // 정배열 추세: 신고가 갱신 OR 강한 상승 (변동폭 큼 + 평균 위)
+    const isUptrend = h60 || (range60 > 0.30 && closeVsAvg > 1.10);
 
-    // 매물대 돌파 = 박스권 + 진입가가 60일 최고가 근처~돌파
-    const isBreakout = isBox && todayClose >= high60 * 0.93;
+    // 박스권: 변동폭 작음 + 신고가 X + 평균 대비 안정
+    // - range60 < 30% (좁은 변동)
+    // - 진입가가 평균 ±15% 안 (안정적 횡보)
+    // - 신고가 갱신 X
+    const isBox = range60 < 0.30 && !h60 && closeVsAvg < 1.15 && closeVsAvg > 0.85;
 
-    // 정배열 = h60 신고가 + 진입가 > 60일 평균
-    const avg60 = past60.reduce((s,r)=>s+r.close, 0) / past60.length;
-    const isUptrend = h60 && todayClose > avg60 * 1.05;
+    // 박스권 돌파: 박스권 + 진입가가 박스 상단 (60일 최고가의 90%+)
+    const isBreakout = isBox && closeVsHigh >= 0.90;
 
-    // V자 반등 = 60일 평균보다 낮은 곳 + 진입가가 60일 평균 미만에서 반등
-    const isVRev = !h60 && !h120 && todayClose < avg60 * 0.95;
+    // V자 반등: 60일/120일 평균 대비 낮음 + 신고가 X
+    const isVRev = !h60 && !h120 && (todayClose < avg60 * 0.92 || todayClose < avg120 * 0.85);
 
-    // 시그널 빈도 (60일내 +10% 이상 양봉 횟수)
+    // 시그널 빈도 (60일내 +10% 이상 양봉)
     const sigsCount = past60.filter(r => r.rate >= 10).length;
 
+    // 디버그 정보 (사용자에게 표시)
     return {
       h60, h120, isBox, isBreakout, isUptrend, isVRev,
       sigs: sigsCount,
       range60: +(range60 * 100).toFixed(1),
-      high60, low60, avg60: Math.round(avg60),
+      closeVsHigh: +(closeVsHigh * 100).toFixed(1),
+      closeVsAvg: +(closeVsAvg * 100).toFixed(1),
+      closeVsLow: +(closeVsLow * 100).toFixed(1),
+      high60: Math.round(high60),
+      low60: Math.round(low60),
+      avg60: Math.round(avg60),
+      avg120: Math.round(avg120),
       todayClose,
+      // 판정 근거 (사용자가 보면 이해 가능)
+      reason: buildReason({h60, h120, isBox, isBreakout, isUptrend, isVRev, range60, closeVsHigh, closeVsAvg}),
     };
   } catch (e) {
     return null;
   }
+}
+
+// 판정 근거 한 줄 설명
+function buildReason({ h60, h120, isBox, isBreakout, isUptrend, isVRev, range60, closeVsHigh, closeVsAvg }) {
+  const r60 = (range60 * 100).toFixed(0);
+  const cvh = (closeVsHigh * 100).toFixed(0);
+  const cva = (closeVsAvg * 100).toFixed(0);
+  if (isUptrend) {
+    if (h60) return `정배열: 60일 신고가 갱신 (변동폭 ${r60}%)`;
+    return `정배열: 60일 평균 대비 +${cva-100}% (변동폭 ${r60}%)`;
+  }
+  if (isBox) {
+    if (isBreakout) return `박스권 돌파: 변동폭 ${r60}% + 박스 상단 ${cvh}%`;
+    return `박스권 안: 변동폭 ${r60}% + 평균 ${cva}%`;
+  }
+  if (isVRev) return `V자 반등: 평균 대비 ${cva}% (저점에서 반등)`;
+  // 어디에도 안 속함
+  if (range60 >= 0.30) return `상승 추세 (변동폭 ${r60}% > 30%)`;
+  if (closeVsAvg > 1.15) return `평균 대비 +${cva-100}% (박스권 X)`;
+  if (closeVsAvg < 0.85) return `평균 대비 ${cva}% (하락 중)`;
+  return `중립: 변동폭 ${r60}% / 평균 ${cva}% / 신고가대비 ${cvh}%`;
 }
 
 // sector-api → 매칭용 시그널 (박스권 검증 데이터 포함)
@@ -800,6 +837,15 @@ function SigRow({ sig, rank, onClick }) {
             </span>
           ))}
         </div>
+        {/* 검증 디버그 한 줄 */}
+        {sig.verify && sig.verify.reason && (
+          <div style={{
+            fontSize: 10, color: "#64748b", marginTop: 4,
+            fontStyle: "italic",
+          }}>
+            🔬 {sig.verify.reason}
+          </div>
+        )}
       </div>
       <div style={{ textAlign: "right" }}>
         <div style={{
@@ -825,7 +871,7 @@ function BacktestTab() {
 
   const result = useMemo(() => {
     // 매칭 시그널
-    const matched = signalsData.filter(s => matchType(s, type.criteria));
+    const matched = signalsData.filter(s => matchType(s, DEFAULT_CRITERIA[typeId], typeId));
     if (matched.length === 0) return null;
 
     // 각 시그널마다 TP/SL 시뮬
@@ -1986,7 +2032,8 @@ function MatchResultCard({ result, canSave, onSave }) {
 
 // ───── 모달: 싱크 상세 ─────
 function SyncDetailModal({ sig, onClose }) {
-  const c = sig.type.criteria;
+  const c = sig.criteria || sig.type.criteria || DEFAULT_CRITERIA[sig.type.id];
+  const v = sig.verify;
   const items = [
     { name:"등락률", score: sig.sync.ch, max: 30,
       detail: `+${sig.ch.toFixed(2)}% (타입 범위 +${c.chMin}~${c.chMax}%, 중심 +${(c.chMin+c.chMax)/2}%)` },
@@ -2063,6 +2110,54 @@ function SyncDetailModal({ sig, onClose }) {
              sig.sync.total >= 50 ? "⚠️ 약한 매칭" : "🚫 매우 약함"}
           </div>
         </div>
+
+        {/* 박스권 / 추세 검증 디버그 */}
+        {v && (
+          <div style={{
+            padding: 12, background: "#0f172a",
+            border: "1px solid #fbbf24", borderRadius: 8,
+            marginBottom: 14,
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#fbbf24", marginBottom: 8 }}>
+              🔬 박스권 / 추세 검증 (60일 일봉 기준)
+            </div>
+            <div style={{
+              fontSize: 12, color: "#10b981", fontWeight: 700,
+              padding: "6px 10px", background: "#1e293b",
+              borderRadius: 4, marginBottom: 8,
+            }}>
+              💡 {v.reason}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px", fontSize: 11, color: "#cbd5e1" }}>
+              <div>오늘 종가: <b>{v.todayClose.toLocaleString()}원</b></div>
+              <div>60일 평균: <b>{v.avg60.toLocaleString()}원</b></div>
+              <div>60일 최고가: <b style={{color:"#10b981"}}>{v.high60.toLocaleString()}</b></div>
+              <div>60일 최저가: <b style={{color:"#ef4444"}}>{v.low60.toLocaleString()}</b></div>
+              <div>60일 변동폭: <b style={{color:v.range60>30?"#a855f7":"#10b981"}}>{v.range60}%</b></div>
+              <div>평균 대비: <b style={{color:v.closeVsAvg>115?"#a855f7":v.closeVsAvg<85?"#ef4444":"#10b981"}}>
+                {v.closeVsAvg > 100 ? "+" : ""}{(v.closeVsAvg - 100).toFixed(1)}%
+              </b></div>
+              <div>고가 대비: <b>{v.closeVsHigh}%</b></div>
+              <div>저가 대비: <b>+{(v.closeVsLow - 100).toFixed(0)}%</b></div>
+              <div>60일 신고가: <b style={{color:v.h60?"#a855f7":"#94a3b8"}}>{v.h60?"O (갱신 근처)":"X"}</b></div>
+              <div>120일 신고가: <b style={{color:v.h120?"#a855f7":"#94a3b8"}}>{v.h120?"O":"X"}</b></div>
+              <div>📦 박스권: <b style={{color:v.isBox?"#10b981":"#94a3b8"}}>{v.isBox?"YES":"NO"}</b></div>
+              <div>🚀 박스 돌파: <b style={{color:v.isBreakout?"#ec4899":"#94a3b8"}}>{v.isBreakout?"YES":"NO"}</b></div>
+              <div>📈 정배열: <b style={{color:v.isUptrend?"#a855f7":"#94a3b8"}}>{v.isUptrend?"YES":"NO"}</b></div>
+              <div>🔄 V자 반등: <b style={{color:v.isVRev?"#0ea5e9":"#94a3b8"}}>{v.isVRev?"YES":"NO"}</b></div>
+              <div>시그널 빈도: <b>{v.sigs}회 (60일)</b></div>
+            </div>
+            <div style={{
+              marginTop: 8, padding: "6px 10px",
+              background: "#1e293b", borderRadius: 4,
+              fontSize: 10, color: "#64748b",
+            }}>
+              📦 박스권 = 변동폭 &lt; 30% + 신고가 X + 평균 ±15% 안<br/>
+              📈 정배열 = 60일 신고가 OR (변동폭 30%+ AND 평균 +10%↑)<br/>
+              🔄 V자 반등 = 평균 92% 미만 + 신고가 X
+            </div>
+          </div>
+        )}
 
         {/* 항목별 점수 */}
         <div style={{
