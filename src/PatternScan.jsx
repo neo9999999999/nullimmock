@@ -1,55 +1,39 @@
-// PatternScan.jsx — 패턴 라이브러리 + 당일 스캔
+// PatternScan.jsx — sector-api-pink 활용 당일 패턴 스캔
 //
-// 기능:
-// 1. 빌트인 패턴 (풍산형 = 박스권 돌파)
-// 2. 사용자 커스텀 패턴 추가 (이미지 업로드 + 정보 입력)
-// 3. 당일 스캔 → 매칭 점수순 TOP 결과
-//
-// 데이터 저장: window.storage (artifact 영구 저장)
-//   - keys: "pattern:custom_<id>" → { id, name, image_b64, criteria, addedAt }
+// 데이터 소스 (이미 구축됨):
+// 1. GET https://sector-api-pink.vercel.app/api/screening
+//    → ok, signals: {S, A, B, X}, all: [{code, name, change, amount, score, grade, investor, wick, ...}]
+// 2. https://raw.githubusercontent.com/neo9999999999/sector-api/main/data/signals.json
+//    → 누적 신호 DB (signal_date, outcome 포함)
 
 import React, { useState, useEffect } from "react";
 
-// 빌트인 패턴: 풍산형 박스권 돌파
+const SECTOR_API = "https://sector-api-pink.vercel.app/api";
+const SIGNALS_DB_URL = "https://raw.githubusercontent.com/neo9999999999/sector-api/main/data/signals.json";
+
+// 빌트인 풍산형 패턴
 const BUILTIN_PATTERNS = [
   {
     id: "builtin_box_breakout",
     name: "풍산형 (장기 박스권 → 거래대금 폭증 돌파)",
-    desc: "1차 급등 → 11개월 박스권 → 큰 양봉 + 거래대금 30배 폭증으로 박스권 상단 돌파",
-    criteria: {
-      pctMin: 13, pctMax: 22,
-      amountRatioMin: 5,         // 거래대금 폭증 5배+
-      requireBox: true,           // 박스권 필수
-      breakoutMin: 0.95, breakoutMax: 1.10,
-    },
+    desc: "1차 급등 → 11개월 박스권 → 큰 양봉 + 거래대금 30배 폭증",
+    criteria: { pctMin: 13, pctMax: 22, amountMin: 800, amountMax: 2000 },
     builtin: true,
-    stats: {
-      n: 642,
-      avg60d: 37.4,
-      win30: 35,
-      win50: 19,
-    },
+    stats: { n: 642, avg60d: 37.4, win30: 35, win50: 19 },
   },
 ];
 
 export default function PatternScan() {
   const [patterns, setPatterns] = useState(BUILTIN_PATTERNS);
   const [selectedPattern, setSelectedPattern] = useState(BUILTIN_PATTERNS[0]);
-  const [scanResults, setScanResults] = useState(null);
-  const [scanning, setScanning] = useState(false);
-  const [scanProgress, setScanProgress] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
 
-  // 환경 체크
-  const [envStatus, setEnvStatus] = useState(null);
-  useEffect(() => {
-    fetch("/api/health")
-      .then(r => r.json())
-      .then(setEnvStatus)
-      .catch(e => setEnvStatus({ error: e.message }));
-  }, []);
+  const [todaySignals, setTodaySignals] = useState(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState(null);
+  const [signalDB, setSignalDB] = useState(null);
 
-  // 사용자 커스텀 패턴 로드 (window.storage)
+  // 사용자 커스텀 패턴 로드
   useEffect(() => {
     if (typeof window === "undefined" || !window.storage) return;
     (async () => {
@@ -63,47 +47,64 @@ export default function PatternScan() {
             if (r) customs.push(JSON.parse(r.value));
           } catch (e) {}
         }
-        if (customs.length > 0) {
-          setPatterns([...BUILTIN_PATTERNS, ...customs]);
-        }
+        if (customs.length > 0) setPatterns([...BUILTIN_PATTERNS, ...customs]);
       } catch (e) {}
     })();
   }, []);
 
-  async function runScan() {
+  // 누적 신호 DB 로드
+  useEffect(() => {
+    fetch(SIGNALS_DB_URL)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        const arr = Array.isArray(data) ? data : (data.signals || []);
+        setSignalDB(arr);
+      })
+      .catch(() => setSignalDB([]));
+  }, []);
+
+  async function runTodayScan() {
     setScanning(true);
-    setScanResults(null);
-    setScanProgress("KIS 토큰 발급 + 스캔 시작...");
+    setScanError(null);
+    setTodaySignals(null);
     try {
-      const res = await fetch("/api/scan-today?max=10&pool=80");
+      const res = await fetch(SECTOR_API + "/screening");
       const data = await res.json();
-      if (data.error) {
-        setScanResults({ error: data.error });
-      } else {
-        setScanResults(data);
-      }
+      if (!data.ok) throw new Error(data.error || "API 에러");
+      // 패턴 점수 매기기
+      const scored = (data.all || []).map(s => ({
+        ...s,
+        patternScore: scorePattern(s, selectedPattern.criteria),
+      })).sort((a, b) => b.patternScore - a.patternScore);
+      setTodaySignals({ ...data, all: scored });
     } catch (e) {
-      setScanResults({ error: e.message });
+      setScanError(e.message);
     } finally {
       setScanning(false);
-      setScanProgress("");
     }
   }
 
+  // 선택 패턴 변경 시 점수 재계산
+  useEffect(() => {
+    if (!todaySignals || !todaySignals.all) return;
+    const scored = todaySignals.all.map(s => ({
+      ...s,
+      patternScore: scorePattern(s, selectedPattern.criteria),
+    })).sort((a, b) => b.patternScore - a.patternScore);
+    setTodaySignals({ ...todaySignals, all: scored });
+  }, [selectedPattern.id]);
+
   async function addPattern(newPattern) {
     if (typeof window === "undefined" || !window.storage) {
-      alert("저장 불가 - browser storage 없음");
-      return;
+      alert("저장 불가"); return;
     }
     const id = "custom_" + Date.now();
-    const pattern = { ...newPattern, id, builtin: false, addedAt: new Date().toISOString() };
+    const pattern = { ...newPattern, id, builtin: false };
     try {
       await window.storage.set("pattern:" + id, JSON.stringify(pattern));
       setPatterns([...patterns, pattern]);
       setShowAddForm(false);
-    } catch (e) {
-      alert("저장 실패: " + e.message);
-    }
+    } catch (e) { alert("저장 실패: " + e.message); }
   }
 
   async function deletePattern(id) {
@@ -116,21 +117,15 @@ export default function PatternScan() {
 
   return (
     <div>
-      {/* 환경 상태 */}
-      {envStatus && (
-        <div style={{
-          marginBottom: 12, padding: 10,
-          background: envStatus.env?.KIS_APP_KEY === "✓ set" ? "#064e3b" : "#7f1d1d",
-          border: "1px solid " + (envStatus.env?.KIS_APP_KEY === "✓ set" ? "#10b981" : "#ef4444"),
-          borderRadius: 6, fontSize: 12,
-        }}>
-          <b>{envStatus.env?.KIS_APP_KEY === "✓ set" ? "✓ KIS API 준비" : "⚠️ Vercel ENV 등록 필요"}</b>
-          {" · "}{envStatus.hint}
-          {envStatus.super_stocks_pool && (
-            <span> · 슈퍼주도주 풀 {envStatus.super_stocks_pool.with_code}/{envStatus.super_stocks_pool.total}</span>
-          )}
-        </div>
-      )}
+      {/* 안내 */}
+      <div style={{
+        marginBottom: 12, padding: 10,
+        background: "#0c4a6e", border: "1px solid #0ea5e9",
+        borderRadius: 6, fontSize: 12, color: "#bae6fd",
+      }}>
+        💡 데이터 소스: <b>sector-api-pink</b> (KIS 인프라) ·
+        누적 시그널 DB: {signalDB == null ? "로드 중..." : `${signalDB.length}건`}
+      </div>
 
       {/* 패턴 라이브러리 */}
       <div style={{
@@ -163,48 +158,79 @@ export default function PatternScan() {
             <PatternCard key={p.id} pattern={p}
               selected={selectedPattern?.id === p.id}
               onClick={() => setSelectedPattern(p)}
-              onDelete={p.builtin ? null : () => deletePattern(p.id)}
-            />
+              onDelete={p.builtin ? null : () => deletePattern(p.id)} />
           ))}
         </div>
       </div>
 
-      {/* 스캔 버튼 */}
+      {/* 스캔 */}
       <div style={{
         marginBottom: 16, padding: 14,
         background: "linear-gradient(to right, #064e3b, #134e4a)",
         border: "1px solid #10b981", borderRadius: 8,
       }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: "#10b981", marginBottom: 8 }}>
-          🔥 당일 패턴 스캔 ({selectedPattern?.name})
+          🔥 당일 시그널 스캔 → "{selectedPattern?.name}" 매칭
         </div>
         <div style={{ fontSize: 11, color: "#a7f3d0", marginBottom: 10 }}>
-          오늘 시그널 발생 종목 → 박스권 돌파 패턴 분석 → 점수순 정렬
-          (슈퍼주도주 풀 80개 스캔, 약 30~60초 소요)
+          sector-api/screening 호출 → 오늘 NEO 시그널 → 패턴 점수순 정렬
         </div>
-        <button onClick={runScan} disabled={scanning || envStatus?.env?.KIS_APP_KEY !== "✓ set"}
+        <button onClick={runTodayScan} disabled={scanning}
           style={{
             background: scanning ? "#475569" : "#10b981",
             color: "#fff", border: "none", borderRadius: 6,
             padding: "10px 20px", fontSize: 14, fontWeight: 700,
             cursor: scanning ? "wait" : "pointer",
-            opacity: envStatus?.env?.KIS_APP_KEY !== "✓ set" ? 0.5 : 1,
           }}>
           {scanning ? "스캔 중..." : "🔍 당일 스캔 실행"}
         </button>
-        {scanProgress && (
-          <div style={{ fontSize: 11, color: "#a7f3d0", marginTop: 8 }}>
-            {scanProgress}
-          </div>
-        )}
       </div>
 
-      {/* 스캔 결과 */}
-      {scanResults && (
-        <ScanResults results={scanResults} />
+      {scanError && (
+        <div style={{
+          marginBottom: 16, padding: 14, background: "#7f1d1d",
+          border: "1px solid #ef4444", borderRadius: 8, color: "#fecaca",
+        }}>
+          ⚠️ 스캔 실패: {scanError}
+        </div>
+      )}
+
+      {todaySignals && (
+        <ScanResults data={todaySignals} pattern={selectedPattern} />
+      )}
+
+      {signalDB && signalDB.length > 0 && (
+        <SignalDBSearch signals={signalDB} pattern={selectedPattern} />
       )}
     </div>
   );
+}
+
+// 패턴 매칭 점수 계산
+function scorePattern(s, c) {
+  let score = 0;
+  const ch = s.change || 0;
+  const amt = s.amount || 0;
+  const inv = s.investor || "";
+  const wick = s.wick;
+
+  if (ch >= c.pctMin && ch <= c.pctMax) score += 40;
+  else if (ch >= 10 && ch < 29) score += 20;
+
+  if (c.amountMin != null && c.amountMax != null) {
+    if (amt >= c.amountMin && amt <= c.amountMax) score += 25;
+    else if (amt >= 500) score += 15;
+  } else {
+    if (amt >= 500) score += 15;
+  }
+
+  if (inv === "기+외") score += 20;
+  else if (inv === "외인") score += 10;
+
+  if (wick != null && wick <= 2) score += 15;
+  else if (wick != null && wick <= 5) score += 5;
+
+  return score;
 }
 
 function PatternCard({ pattern, selected, onClick, onDelete }) {
@@ -228,7 +254,7 @@ function PatternCard({ pattern, selected, onClick, onDelete }) {
         )}
         {pattern.stats && (
           <div style={{ fontSize: 10, color: "#fbbf24", marginTop: 4 }}>
-            과거 {pattern.stats.n}건 / 평균 +{pattern.stats.avg60d}% / +30% 도달 {pattern.stats.win30}%
+            과거 {pattern.stats.n}건 / 평균 +{pattern.stats.avg60d}% / +30% {pattern.stats.win30}%
           </div>
         )}
         {pattern.image_b64 && (
@@ -256,8 +282,8 @@ function AddPatternForm({ onAdd, onCancel }) {
   const [imageB64, setImageB64] = useState("");
   const [pctMin, setPctMin] = useState(13);
   const [pctMax, setPctMax] = useState(22);
-  const [amountRatioMin, setAmountRatioMin] = useState(5);
-  const [requireBox, setRequireBox] = useState(true);
+  const [amountMin, setAmountMin] = useState(800);
+  const [amountMax, setAmountMax] = useState(2000);
 
   function onFileChange(e) {
     const f = e.target.files[0];
@@ -268,14 +294,12 @@ function AddPatternForm({ onAdd, onCancel }) {
   }
 
   function submit() {
-    if (!name) { alert("패턴 이름 입력"); return; }
+    if (!name) { alert("이름 입력"); return; }
     onAdd({
-      name, desc,
-      image_b64: imageB64,
+      name, desc, image_b64: imageB64,
       criteria: {
         pctMin: parseFloat(pctMin), pctMax: parseFloat(pctMax),
-        amountRatioMin: parseFloat(amountRatioMin),
-        requireBox,
+        amountMin: parseFloat(amountMin), amountMax: parseFloat(amountMax),
       },
     });
   }
@@ -289,31 +313,28 @@ function AddPatternForm({ onAdd, onCancel }) {
         새 패턴 추가
       </div>
       <input type="text" value={name} onChange={e => setName(e.target.value)}
-        placeholder="패턴 이름 (예: 풍산형)"
-        style={inp} />
+        placeholder="패턴 이름" style={inp} />
       <input type="text" value={desc} onChange={e => setDesc(e.target.value)}
-        placeholder="설명 (예: 11개월 박스권 후 거래대금 폭증 돌파)"
-        style={inp} />
+        placeholder="설명" style={inp} />
       <input type="file" accept="image/*" onChange={onFileChange}
         style={{ ...inp, padding: 4 }} />
       {imageB64 && (
         <img src={imageB64} alt="preview" style={{ maxHeight: 100, marginBottom: 8, borderRadius: 4 }} />
       )}
-      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-        <label style={lbl}>등락률 min
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginBottom: 8 }}>
+        <label style={lbl}>등락률 min (%)
           <input type="number" value={pctMin} onChange={e => setPctMin(e.target.value)} style={numInp} />
         </label>
-        <label style={lbl}>등락률 max
+        <label style={lbl}>등락률 max (%)
           <input type="number" value={pctMax} onChange={e => setPctMax(e.target.value)} style={numInp} />
         </label>
-        <label style={lbl}>거래대금 폭증 비율 (배)
-          <input type="number" value={amountRatioMin} onChange={e => setAmountRatioMin(e.target.value)} style={numInp} />
+        <label style={lbl}>거래대금 min (억)
+          <input type="number" value={amountMin} onChange={e => setAmountMin(e.target.value)} style={numInp} />
+        </label>
+        <label style={lbl}>거래대금 max (억)
+          <input type="number" value={amountMax} onChange={e => setAmountMax(e.target.value)} style={numInp} />
         </label>
       </div>
-      <label style={{ fontSize: 11, color: "#94a3b8", display: "flex", alignItems: "center", gap: 4 }}>
-        <input type="checkbox" checked={requireBox} onChange={e => setRequireBox(e.target.checked)} />
-        박스권 필수
-      </label>
       <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
         <button onClick={submit} style={{ ...btn, background: "#10b981" }}>저장</button>
         <button onClick={onCancel} style={{ ...btn, background: "#475569" }}>취소</button>
@@ -322,31 +343,24 @@ function AddPatternForm({ onAdd, onCancel }) {
   );
 }
 
-function ScanResults({ results }) {
-  if (results.error) {
-    return (
-      <div style={{
-        padding: 16, background: "#7f1d1d",
-        border: "1px solid #ef4444", borderRadius: 8, color: "#fecaca",
-      }}>
-        ⚠️ {results.error}
-      </div>
-    );
-  }
+function ScanResults({ data, pattern }) {
+  const all = data.all || [];
+  const top10 = all.slice(0, 10);
   return (
     <div style={{
-      padding: 14, background: "#1e293b",
+      marginBottom: 16, padding: 14, background: "#1e293b",
       border: "1px solid #334155", borderRadius: 8,
     }}>
       <div style={{ fontSize: 14, fontWeight: 700, color: "#fbbf24", marginBottom: 8 }}>
-        🥇 스캔 결과 ({results.target_date})
+        🥇 오늘 시그널 ({data.date} {data.time})
       </div>
       <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10 }}>
-        스캔 {results.scanned}개 · 매칭 {results.matches}개 · 에러 {results.errors}개
+        총 {data.summary?.total || 0}건 · S {data.summary?.S || 0} / A {data.summary?.A || 0} / B {data.summary?.B || 0} ·
+        패턴: "{pattern.name}"
       </div>
-      {results.results.length === 0 ? (
-        <div style={{ padding: 30, textAlign: "center", color: "#94a3b8" }}>
-          오늘 패턴 매칭 종목 없음
+      {top10.length === 0 ? (
+        <div style={{ padding: 20, textAlign: "center", color: "#94a3b8" }}>
+          오늘 시그널 없음
         </div>
       ) : (
         <div style={{ overflowX: "auto" }}>
@@ -354,47 +368,123 @@ function ScanResults({ results }) {
             <thead>
               <tr style={{ color: "#94a3b8" }}>
                 <th style={th}>#</th>
-                <th style={th}>점수</th>
+                <th style={th}>패턴<br/>점수</th>
+                <th style={th}>NEO<br/>등급</th>
                 <th style={th}>종목</th>
                 <th style={th}>코드</th>
                 <th style={th}>등락</th>
                 <th style={th}>거래대금</th>
-                <th style={th}>폭증</th>
-                <th style={th}>박스권</th>
-                <th style={th}>시그널</th>
+                <th style={th}>윗꼬리</th>
+                <th style={th}>수급</th>
+                <th style={th}>시장</th>
               </tr>
             </thead>
             <tbody>
-              {results.results.map((r, i) => (
-                <tr key={i} style={{ background: i % 2 === 0 ? "#0f172a" : "transparent" }}>
-                  <td style={td}>{r.rank}</td>
-                  <td style={Object.assign({}, td, { fontWeight: 800,
-                       color: r.score >= 80 ? "#10b981" : r.score >= 60 ? "#fbbf24" : "#94a3b8" })}>
-                    {r.score}
-                  </td>
-                  <td style={Object.assign({}, td, { fontWeight: 700, color: "#fbbf24" })}>
-                    {r.name}
-                  </td>
-                  <td style={td}>{r.code}</td>
-                  <td style={Object.assign({}, td, { color: "#10b981" })}>
-                    +{r.signal.pct.toFixed(2)}%
-                  </td>
-                  <td style={td}>
-                    {(r.signal.amount / 1e8).toFixed(0)}억
-                  </td>
-                  <td style={Object.assign({}, td, { color: "#10b981" })}>
-                    {r.signal.amountRatio.toFixed(1)}x
-                  </td>
-                  <td style={td}>
-                    {r.box?.isBox ? "✓ " + r.box.rangePct.toFixed(0) + "%" : "X"}
-                  </td>
-                  <td style={Object.assign({}, td, { color: "#94a3b8" })}>
-                    {r.signals_6y}회
+              {top10.map((s, i) => (
+                <tr key={s.code} style={{ background: i % 2 === 0 ? "#0f172a" : "transparent" }}>
+                  <td style={td}>{i + 1}</td>
+                  <td style={Object.assign({}, td, {
+                    fontWeight: 800,
+                    color: s.patternScore >= 80 ? "#10b981" :
+                           s.patternScore >= 60 ? "#fbbf24" : "#94a3b8"
+                  })}>{s.patternScore}</td>
+                  <td style={Object.assign({}, td, {
+                    fontWeight: 800,
+                    color: s.grade === "S" ? "#10b981" :
+                           s.grade === "A" ? "#fbbf24" :
+                           s.grade === "B" ? "#0ea5e9" : "#64748b"
+                  })}>{s.grade}</td>
+                  <td style={Object.assign({}, td, { fontWeight: 700, color: "#fbbf24" })}>{s.name}</td>
+                  <td style={td}>{s.code}</td>
+                  <td style={Object.assign({}, td, { color: "#10b981" })}>+{(s.change || 0).toFixed(2)}%</td>
+                  <td style={td}>{s.amount}억</td>
+                  <td style={td}>{s.wick != null ? s.wick + "%" : "-"}</td>
+                  <td style={Object.assign({}, td, {
+                    color: s.investor === "기+외" ? "#10b981" :
+                           s.investor === "외인" ? "#0ea5e9" : "#94a3b8"
+                  })}>{s.investor}</td>
+                  <td style={td}>{s.market}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SignalDBSearch({ signals, pattern }) {
+  const matched = signals
+    .filter(s => s.grade !== "X")
+    .map(s => ({
+      ...s,
+      patternScore: scorePattern({
+        change: s.rate || 0,
+        amount: s.vol || 0,
+        investor: s.supply || "",
+        wick: s.wick,
+      }, pattern.criteria),
+    }))
+    .filter(s => s.patternScore >= 60)
+    .sort((a, b) => b.patternScore - a.patternScore);
+  const top30 = matched.slice(0, 30);
+
+  return (
+    <div style={{
+      padding: 14, background: "#1e293b",
+      border: "1px solid #334155", borderRadius: 8,
+    }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "#fbbf24", marginBottom: 4 }}>
+        📚 누적 시그널 DB — 같은 패턴 과거 사례
+      </div>
+      <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10 }}>
+        sector-api/data/signals.json · 점수 60+ 매칭 {matched.length}건
+      </div>
+      {top30.length > 0 ? (
+        <div style={{ maxHeight: 400, overflowY: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+            <thead style={{ position: "sticky", top: 0, background: "#1e293b" }}>
+              <tr style={{ color: "#94a3b8" }}>
+                <th style={th}>#</th>
+                <th style={th}>점수</th>
+                <th style={th}>등급</th>
+                <th style={th}>종목</th>
+                <th style={th}>날짜</th>
+                <th style={th}>등락</th>
+                <th style={th}>거래대금</th>
+                <th style={th}>수급</th>
+                <th style={th}>결과</th>
+              </tr>
+            </thead>
+            <tbody>
+              {top30.map((s, i) => (
+                <tr key={s.id || i} style={{ background: i % 2 === 0 ? "#0f172a" : "transparent" }}>
+                  <td style={td}>{i + 1}</td>
+                  <td style={Object.assign({}, td, { fontWeight: 800, color: "#fbbf24" })}>{s.patternScore}</td>
+                  <td style={Object.assign({}, td, {
+                    color: s.grade === "S" ? "#10b981" :
+                           s.grade === "A" ? "#fbbf24" : "#0ea5e9"
+                  })}>{s.grade}</td>
+                  <td style={Object.assign({}, td, { fontWeight: 700, color: "#fbbf24" })}>{s.name}</td>
+                  <td style={td}>{s.signal_date}</td>
+                  <td style={Object.assign({}, td, { color: "#10b981" })}>+{(s.rate || 0).toFixed(1)}%</td>
+                  <td style={td}>{s.vol || 0}억</td>
+                  <td style={td}>{s.supply}</td>
+                  <td style={Object.assign({}, td, {
+                    color: s.outcome === "TP1" || s.outcome === "TP2" ? "#10b981" :
+                           s.outcome === "SL" ? "#ef4444" : "#94a3b8"
+                  })}>
+                    {s.outcome || "-"}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      ) : (
+        <div style={{ padding: 20, textAlign: "center", color: "#94a3b8" }}>
+          매칭되는 과거 시그널 없음 (점수 60+)
         </div>
       )}
     </div>
@@ -407,13 +497,17 @@ const inp = {
   border: "1px solid #475569", borderRadius: 4, outline: "none",
   boxSizing: "border-box",
 };
-const numInp = { ...inp, width: 80, marginBottom: 0 };
+const numInp = { ...inp, width: "100%", marginBottom: 0 };
 const lbl = { fontSize: 10, color: "#94a3b8", display: "flex", flexDirection: "column", gap: 2 };
 const btn = {
   border: "none", color: "#fff", padding: "6px 14px",
   borderRadius: 4, fontSize: 12, fontWeight: 700, cursor: "pointer",
 };
-const th = { textAlign: "center", padding: "6px 8px", fontSize: 11,
-             fontWeight: 600, borderBottom: "1px solid #334155" };
-const td = { textAlign: "center", padding: "5px 8px",
-             borderBottom: "1px solid #1e293b" };
+const th = {
+  textAlign: "center", padding: "6px 8px", fontSize: 11,
+  fontWeight: 600, borderBottom: "1px solid #334155",
+};
+const td = {
+  textAlign: "center", padding: "5px 8px",
+  borderBottom: "1px solid #1e293b",
+};
