@@ -13,6 +13,7 @@ const SECTOR_API = "https://sector-api-pink.vercel.app/api";
 // 5가지 타입 — 이전 6타입에서 A/D 통합 (둘 다 박스권 돌파라서)
 // criteria 풀세트 — 모든 필터 (사용자 편집 가능)
 // box/breakout/uptrend/vrev/h60/h120: "req"=필수 / "no"=금지 / "any"=무관
+// maAlign: ["정배열","단기정배열","혼조","단기역배열","역배열"] 중 허용 배열
 const DEFAULT_CRITERIA = {
   1: {
     chMin: 13, chMax: 30,
@@ -22,6 +23,9 @@ const DEFAULT_CRITERIA = {
     range60Min: 0, range60Max: 50,
     sigsMin: 0, sigsMax: 99,
     wickMax: 10,
+    resistanceMin: 2, resistanceMax: 99,    // 저항 터치 횟수
+    bodyBreakout: "any",                     // 양봉 몸통 돌파
+    maAlignAllowed: ["혼조", "단기정배열", "단기역배열"],  // 박스권은 혼조/단기 위주
     ivAllowed: ["기+외", "외만", "기만", "둘다-"],
   },
   2: {
@@ -32,6 +36,9 @@ const DEFAULT_CRITERIA = {
     range60Min: 0, range60Max: 99,
     sigsMin: 0, sigsMax: 99,
     wickMax: 10,
+    resistanceMin: 0, resistanceMax: 99,
+    bodyBreakout: "any",
+    maAlignAllowed: ["역배열", "단기역배열", "혼조"],   // V반등은 하락 추세에서 시작
     ivAllowed: ["기+외", "외만", "기만", "둘다-"],
   },
   3: {
@@ -42,6 +49,9 @@ const DEFAULT_CRITERIA = {
     range60Min: 0, range60Max: 99,
     sigsMin: 2, sigsMax: 99,
     wickMax: 10,
+    resistanceMin: 0, resistanceMax: 99,
+    bodyBreakout: "any",
+    maAlignAllowed: ["정배열", "단기정배열", "혼조", "단기역배열", "역배열"],
     ivAllowed: ["기+외", "외만", "기만", "둘다-"],
   },
   4: {
@@ -52,6 +62,9 @@ const DEFAULT_CRITERIA = {
     range60Min: 0, range60Max: 50,
     sigsMin: 0, sigsMax: 99,
     wickMax: 10,
+    resistanceMin: 3, resistanceMax: 99,    // 매물대 = 다중 저항 (3+)
+    bodyBreakout: "req",                     // 매물대 돌파 = 몸통 돌파 필수
+    maAlignAllowed: ["혼조", "단기정배열", "단기역배열"],
     ivAllowed: ["기+외", "외만", "기만", "둘다-"],
   },
   5: {
@@ -62,6 +75,9 @@ const DEFAULT_CRITERIA = {
     range60Min: 0, range60Max: 99,
     sigsMin: 0, sigsMax: 99,
     wickMax: 10,
+    resistanceMin: 0, resistanceMax: 99,
+    bodyBreakout: "any",
+    maAlignAllowed: ["정배열", "단기정배열"],   // 정배열 추세는 이평 정배열 필수
     ivAllowed: ["기+외", "외만", "기만", "둘다-"],
   },
 };
@@ -131,7 +147,6 @@ function matchType(s, c, typeId) {
   // 5. 검증 데이터 기반 (verify 있을 때만)
   if (s.verify) {
     const v = s.verify;
-    // 박스권/돌파/추세/V반등
     const checkBool = (rule, value) => {
       if (rule === "req" && !value) return false;
       if (rule === "no" && value) return false;
@@ -143,7 +158,10 @@ function matchType(s, c, typeId) {
     if (!checkBool(c.isVRev, v.isVRev)) return false;
     if (!checkBool(c.h60, v.h60)) return false;
     if (!checkBool(c.h120, v.h120)) return false;
-    // 60일 변동폭
+    // 양봉 몸통 돌파
+    if (!checkBool(c.bodyBreakout, v.bodyBreakout)) return false;
+
+    // 변동폭
     if (v.range60 != null) {
       if (v.range60 < (c.range60Min ?? 0)) return false;
       if (v.range60 > (c.range60Max ?? 99)) return false;
@@ -153,8 +171,16 @@ function matchType(s, c, typeId) {
       if (v.sigs < (c.sigsMin ?? 0)) return false;
       if (v.sigs > (c.sigsMax ?? 99)) return false;
     }
+    // 저항 터치 횟수
+    if (v.resistanceTouches != null && c.resistanceMin != null) {
+      if (v.resistanceTouches < c.resistanceMin) return false;
+      if (v.resistanceTouches > (c.resistanceMax ?? 99)) return false;
+    }
+    // 이평배열
+    if (c.maAlignAllowed && c.maAlignAllowed.length > 0 && v.maAlign) {
+      if (!c.maAlignAllowed.includes(v.maAlign)) return false;
+    }
   } else {
-    // verify 없으면: ch/amt 통과만 확인 (점진적 표시)
     if (c.sigsMin != null && c.sigsMin > 0 && (s.sigs ?? 0) < c.sigsMin) return false;
   }
   return true;
@@ -204,7 +230,7 @@ function calcSyncDetail(s, c) {
   };
 }
 
-// daily-price 호출 → 60일/120일 신고가 + 박스권 검증
+// daily-price 호출 → 60일/120일 신고가 + 박스권/저항터치/이평배열/돌파 검증
 async function fetchVerify(code) {
   try {
     const today = new Date();
@@ -216,7 +242,12 @@ async function fetchVerify(code) {
     if (!data.ok || !data.output || data.output.length < 30) return null;
 
     const rows = data.output;
-    const todayClose = rows[0].close;
+    const todayRow = rows[0];
+    const todayClose = todayRow.close;
+    const todayHigh = todayRow.high;
+    const todayOpen = todayRow.open;
+    // 양봉 몸통 (시가~종가 중 큰 값까지)
+    const todayBodyHigh = Math.max(todayOpen, todayClose);
 
     // 과거 60/120일 (오늘 봉 제외)
     const past60 = rows.slice(1, 61);
@@ -233,38 +264,104 @@ async function fetchVerify(code) {
       ? past120.reduce((s,r)=>s+r.close, 0) / past120.length
       : avg60;
 
-    // 비율 계산
-    const range60 = (high60 - low60) / low60;             // 60일 변동폭 (low60 기준)
-    const closeVsHigh = todayClose / high60;              // 진입가 / 60일 최고가
-    const closeVsAvg = todayClose / avg60;                // 진입가 / 60일 평균
-    const closeVsLow = todayClose / low60;                // 진입가 / 60일 최저가
+    // ────────────────────────────────────────────
+    // 이평선 (5/20/60/120일) — 종가 기준
+    // ────────────────────────────────────────────
+    const ma = (rows, n) => {
+      if (rows.length < n) return null;
+      const s = rows.slice(0, n).reduce((a,r) => a + r.close, 0);
+      return s / n;
+    };
+    const allRows = rows; // 오늘 포함
+    const ma5 = ma(allRows, 5);
+    const ma20 = ma(allRows, 20);
+    const ma60 = ma(allRows, 60);
+    const ma120 = ma(allRows, 120);
 
-    // h60/h120: 60/120일 신고가 근처
+    // 정배열: ma5 > ma20 > ma60 > ma120 (강한 상승 추세)
+    // 역배열: ma5 < ma20 < ma60 < ma120 (강한 하락 추세)
+    let maAlign = "혼조";
+    if (ma5 && ma20 && ma60 && ma120) {
+      if (ma5 > ma20 && ma20 > ma60 && ma60 > ma120) maAlign = "정배열";
+      else if (ma5 < ma20 && ma20 < ma60 && ma60 < ma120) maAlign = "역배열";
+      else if (ma5 > ma20 && ma20 > ma60) maAlign = "단기정배열";
+      else if (ma5 < ma20 && ma20 < ma60) maAlign = "단기역배열";
+      else maAlign = "혼조";
+    }
+
+    // 5일선이 20일선을 상향 돌파 (골든크로스 임박)
+    const ma5Yest = ma(allRows.slice(1), 5);
+    const ma20Yest = ma(allRows.slice(1), 20);
+    const goldenCross = ma5 && ma20 && ma5Yest && ma20Yest &&
+                        ma5 > ma20 && ma5Yest <= ma20Yest;
+
+    // 비율 계산
+    const range60 = (high60 - low60) / low60;
+    const closeVsHigh = todayClose / high60;
+    const closeVsAvg = todayClose / avg60;
+    const closeVsLow = todayClose / low60;
+
+    // h60/h120
     const h60 = todayClose >= high60 * 0.97;
     const h120 = todayClose >= high120 * 0.97;
 
-    // 정배열 추세: 신고가 갱신 OR 강한 상승 (변동폭 큼 + 평균 위)
-    const isUptrend = h60 || (range60 > 0.30 && closeVsAvg > 1.10);
+    // ────────────────────────────────────────────
+    // 저항선 다중 터치 (박스권 패턴 핵심)
+    // ────────────────────────────────────────────
+    // 60일 안에 high60의 95~100% 영역에서 닫은 봉의 횟수 = 저항 터치
+    const resistanceTouches = past60.filter(r =>
+      r.high >= high60 * 0.95 && r.high <= high60 * 1.005
+    ).length;
 
-    // 박스권: 변동폭 작음 + 신고가 X + 평균 대비 안정
-    // - range60 < 30% (좁은 변동)
-    // - 진입가가 평균 ±15% 안 (안정적 횡보)
-    // - 신고가 갱신 X
-    const isBox = range60 < 0.30 && !h60 && closeVsAvg < 1.15 && closeVsAvg > 0.85;
+    // 박스권 = 변동폭 작음 + 다중 저항 (3+ 터치) + 신고가 X
+    // 더 관대하게: 변동폭 35%까지, 저항 2회+면 박스권 인정
+    const isBox = range60 < 0.35 && !h60 &&
+                  resistanceTouches >= 2 &&
+                  closeVsAvg < 1.20 && closeVsAvg > 0.80;
 
-    // 박스권 돌파: 박스권 + 진입가가 박스 상단 (60일 최고가의 90%+)
-    const isBreakout = isBox && closeVsHigh >= 0.90;
+    // ────────────────────────────────────────────
+    // 박스권 돌파 (진짜 정의)
+    // ────────────────────────────────────────────
+    // 1. 박스권 (위 조건)
+    // 2. 다중 저항 (3+ 터치) — 매물대 형성
+    // 3. 양봉 몸통이 60일 최고가 위로 돌파 (꼬리 X, 몸통)
+    //    OR 종가가 high60의 98% 이상 (강력한 박스 상단 도달)
+    const bodyBreakout = todayBodyHigh > high60 * 1.005;  // 몸통이 최고가 0.5% 위로
+    const closeNearHigh = todayClose >= high60 * 0.98;     // 종가가 박스 상단 근처
 
-    // V자 반등: 60일/120일 평균 대비 낮음 + 신고가 X
-    const isVRev = !h60 && !h120 && (todayClose < avg60 * 0.92 || todayClose < avg120 * 0.85);
+    const isBreakout = (isBox || range60 < 0.40) &&
+                       resistanceTouches >= 3 &&
+                       (bodyBreakout || (closeNearHigh && todayClose >= todayOpen));
+
+    // 약식 박스권 (저항 2회만 터치 + 변동폭 작은 경우)
+    const isWeakBox = range60 < 0.40 && !h60 && resistanceTouches >= 2;
+
+    // 정배열 추세
+    const isUptrend = (maAlign === "정배열" || maAlign === "단기정배열") ||
+                      h60 || (range60 > 0.35 && closeVsAvg > 1.10);
+
+    // V자 반등
+    const isVRev = !h60 && !h120 &&
+                   (maAlign === "역배열" || maAlign === "단기역배열" ||
+                    todayClose < avg60 * 0.92 || todayClose < avg120 * 0.85);
 
     // 시그널 빈도 (60일내 +10% 이상 양봉)
     const sigsCount = past60.filter(r => r.rate >= 10).length;
 
-    // 디버그 정보 (사용자에게 표시)
     return {
-      h60, h120, isBox, isBreakout, isUptrend, isVRev,
+      h60, h120, isBox, isBreakout, isUptrend, isVRev, isWeakBox,
       sigs: sigsCount,
+      // 새 필드
+      resistanceTouches,
+      bodyBreakout,
+      closeNearHigh,
+      maAlign,
+      goldenCross,
+      ma5: ma5 ? Math.round(ma5) : null,
+      ma20: ma20 ? Math.round(ma20) : null,
+      ma60: ma60 ? Math.round(ma60) : null,
+      ma120: ma120 ? Math.round(ma120) : null,
+      // 기존 필드
       range60: +(range60 * 100).toFixed(1),
       closeVsHigh: +(closeVsHigh * 100).toFixed(1),
       closeVsAvg: +(closeVsAvg * 100).toFixed(1),
@@ -274,33 +371,44 @@ async function fetchVerify(code) {
       avg60: Math.round(avg60),
       avg120: Math.round(avg120),
       todayClose,
-      // 판정 근거 (사용자가 보면 이해 가능)
-      reason: buildReason({h60, h120, isBox, isBreakout, isUptrend, isVRev, range60, closeVsHigh, closeVsAvg}),
+      todayHigh,
+      todayOpen,
+      reason: buildReason({
+        h60, isBox, isBreakout, isUptrend, isVRev,
+        range60, closeVsHigh, closeVsAvg,
+        resistanceTouches, bodyBreakout, maAlign,
+      }),
     };
   } catch (e) {
     return null;
   }
 }
 
-// 판정 근거 한 줄 설명
-function buildReason({ h60, h120, isBox, isBreakout, isUptrend, isVRev, range60, closeVsHigh, closeVsAvg }) {
+// 판정 근거 한 줄 설명 (강화)
+function buildReason({ h60, isBox, isBreakout, isUptrend, isVRev, range60, closeVsHigh, closeVsAvg, resistanceTouches, bodyBreakout, maAlign }) {
   const r60 = (range60 * 100).toFixed(0);
   const cvh = (closeVsHigh * 100).toFixed(0);
   const cva = (closeVsAvg * 100).toFixed(0);
+
+  if (isBreakout) {
+    return `박스권 돌파: 저항 ${resistanceTouches}회 터치 후 ${bodyBreakout?"몸통":""} 돌파 (변동폭 ${r60}%)`;
+  }
   if (isUptrend) {
+    if (maAlign === "정배열") return `정배열: 이평 5>20>60>120 (변동폭 ${r60}%)`;
     if (h60) return `정배열: 60일 신고가 갱신 (변동폭 ${r60}%)`;
-    return `정배열: 60일 평균 대비 +${cva-100}% (변동폭 ${r60}%)`;
+    return `정배열: 평균 대비 +${(cva-100).toFixed(0)}% (변동폭 ${r60}%)`;
   }
   if (isBox) {
-    if (isBreakout) return `박스권 돌파: 변동폭 ${r60}% + 박스 상단 ${cvh}%`;
-    return `박스권 안: 변동폭 ${r60}% + 평균 ${cva}%`;
+    return `박스권 안: 변동폭 ${r60}% + 저항 ${resistanceTouches}회 터치 + 평균 ${cva}%`;
   }
-  if (isVRev) return `V자 반등: 평균 대비 ${cva}% (저점에서 반등)`;
-  // 어디에도 안 속함
-  if (range60 >= 0.30) return `상승 추세 (변동폭 ${r60}% > 30%)`;
-  if (closeVsAvg > 1.15) return `평균 대비 +${cva-100}% (박스권 X)`;
-  if (closeVsAvg < 0.85) return `평균 대비 ${cva}% (하락 중)`;
-  return `중립: 변동폭 ${r60}% / 평균 ${cva}% / 신고가대비 ${cvh}%`;
+  if (isVRev) {
+    if (maAlign === "역배열") return `V자 반등: 이평 역배열 + 평균 ${cva}%`;
+    return `V자 반등: 평균 대비 ${cva}% (저점 반등)`;
+  }
+  if (range60 >= 0.35) return `상승 추세 (변동폭 ${r60}% > 35%, ${maAlign})`;
+  if (closeVsAvg > 1.20) return `평균 대비 +${(cva-100).toFixed(0)}% (박스권 X)`;
+  if (closeVsAvg < 0.80) return `평균 대비 ${cva}% (하락 중)`;
+  return `${maAlign} / 변동폭 ${r60}% / 평균 ${cva}% / 저항 ${resistanceTouches}회`;
 }
 
 // sector-api → 매칭용 시그널 (박스권 검증 데이터 포함)
@@ -765,14 +873,21 @@ function SigRow({ sig, rank, onClick }) {
   const sync = sig.sync.total;
   const syncColor = sync >= 80 ? "#10b981" : sync >= 65 ? "#fbbf24" : "#94a3b8";
   
-  // 검증 뱃지
+  // 검증 뱃지 (강화)
   const badges = [];
   if (sig.verify) {
-    if (sig.isBox) badges.push({ text: "📦 박스권", color: "#10b981" });
-    if (sig.isBreakout) badges.push({ text: "🚀 돌파", color: "#ec4899" });
-    if (sig.isUptrend) badges.push({ text: "📈 정배열", color: "#a855f7" });
-    if (sig.isVRev) badges.push({ text: "🔄 V반등", color: "#0ea5e9" });
-    if (sig.h60 && !sig.isUptrend) badges.push({ text: "60일 고가", color: "#fbbf24" });
+    const v = sig.verify;
+    if (v.isBreakout) badges.push({ text: "🚀 박스 돌파", color: "#ec4899" });
+    else if (v.isBox) badges.push({ text: "📦 박스권", color: "#10b981" });
+    if (v.isUptrend) badges.push({ text: "📈 정배열", color: "#a855f7" });
+    if (v.isVRev) badges.push({ text: "🔄 V반등", color: "#0ea5e9" });
+    if (v.bodyBreakout) badges.push({ text: "💪 몸통돌파", color: "#fbbf24" });
+    if (v.resistanceTouches >= 3) badges.push({ text: `🎯 저항${v.resistanceTouches}회`, color: "#f97316" });
+    if (v.maAlign === "정배열") badges.push({ text: "📊 이평정배열", color: "#a855f7" });
+    else if (v.maAlign === "역배열") badges.push({ text: "📉 이평역배열", color: "#64748b" });
+    else if (v.maAlign && v.maAlign !== "혼조") badges.push({ text: "📊 " + v.maAlign, color: "#94a3b8" });
+    if (v.goldenCross) badges.push({ text: "✨ 골든크로스", color: "#10b981" });
+    if (v.h60 && !v.isUptrend) badges.push({ text: "60일 고가", color: "#fbbf24" });
   } else {
     badges.push({ text: "⏳ 검증 중", color: "#64748b" });
   }
@@ -1617,53 +1732,144 @@ function DefinitionsTab({
       const mediaType = m[1];
       const data = m[2];
 
-      const prompt = `당신은 한국 주식 차트 분석 전문가입니다. 첨부된 일봉 차트 이미지를 매우 정밀하게 분석하세요.
+      // 학습 차트들 수집 (시각 비교용, 타입별 최대 2개씩)
+      const learningExamples = [];
+      for (const t of PATTERN_TYPES) {
+        const list = userPatterns[t.id] || [];
+        for (const u of list.slice(0, 2)) {
+          if (u.img && learningExamples.length < 5) {
+            const um = u.img.match(/^data:(image\/[a-z]+);base64,(.+)$/);
+            if (um) {
+              learningExamples.push({
+                typeId: t.id, typeName: t.name,
+                mediaType: um[1], data: um[2],
+                ch: u.ch, amt: u.amt,
+              });
+            }
+          }
+        }
+      }
 
-⚠️ 중요한 규칙:
-1. 추측하지 마세요. 차트에 명시되지 않은 값은 null로 반환하세요.
-2. 한국 차트 특성: 빨간색=상승, 파란색=하락 (서구와 반대)
-3. 가장 우측의 가장 큰 빨간 양봉이 시그널입니다.
-4. 등락률은 차트 상단/하단의 텍스트 또는 봉 옆 라벨에 표시됩니다. 텍스트가 보이지 않으면 null.
-5. 거래대금은 차트 하단 거래량 막대 아래의 숫자/Y축 라벨을 정확히 읽으세요.
-   - 한국 차트는 보통 "백만원" 또는 "원" 단위. "억" 단위 환산:
-     · 거래량(주식수) × 가격 / 100,000,000 = 거래대금(억원)
-     · 또는 거래대금 표시가 직접 있으면 단위를 정확히 환산하세요.
-   - 예: "70,000,000,000원" = 700억원, "7,000,000,000,000원" = 7000억원 = 7조
-   - 거래대금 라벨이 없으면 null. 절대 추측하지 마세요.
+      const prompt = `당신은 한국 주식 차트 분석 전문가입니다. 첨부된 일봉 차트를 정확하게 분석하세요.
 
-추출할 정보:
-- ch (number|null): 시그널 양봉의 정확한 등락률 % (소수점 둘째자리까지). 차트에 명시된 값만. 모르면 null.
-- amt (number|null): 시그널 일자 거래대금을 "억원" 단위로. 차트에 명시된 거래대금/거래량 라벨에서 정확히 추출. 환산 못하면 null.
-- price (number|null): 시그널 봉의 종가 (원). 라벨에 보이는 값.
-- h60 (boolean): 시그널 직전 60일(약 3개월) 최고가를 갱신했는지
-- h120 (boolean): 시그널 직전 120일(약 6개월) 최고가를 갱신했는지
-- box (boolean): 박스권 차트인지
-- box_months (number): 박스권 기간 (개월수, 0이면 박스권 아님)
-- left_signal (boolean): 좌측에 비슷한 큰 양봉이 있는지
-- left_signal_count (number): 좌측 시그널 횟수 (없으면 0)
-- vrev (boolean): 1년+ 하락 후 V자 반등인지
-- breakout (boolean): 박스권 매물대를 위로 돌파했는지
-- iv (string): 수급 추정. 차트만 보고는 모름. "차트만으로 추정 어려움"이면 null. 거래대금이 폭증한 시그널이면 "기+외" 추정 가능.
-- wick (number|null): 시그널 봉의 윗꼬리 % = (고가-종가)/시가 × 100. 봉 모양 보고 추정. 모르면 null.
-- description (string): 차트 한 줄 설명
-- confidence (number): 분석 자신감 0~100. 차트가 흐릿하거나 라벨이 안 보이면 50 미만.
-- notes (string): 분석 시 어려웠던 부분 또는 추정 근거
+【핵심 원칙】
+1. ⚠️ 절대 추측 금지. 차트에서 정확한 값을 읽을 수 없으면 null 반환.
+2. 한국 차트: 빨간색=상승 양봉, 파란색=하락 음봉 (서구와 반대).
+3. 가장 우측의 가장 큰 빨간 양봉이 시그널 봉.
 
-JSON만 반환:
-{"ch":16.67,"amt":1108,"price":12500,"h60":false,"h120":false,"box":true,"box_months":11,"left_signal":false,"left_signal_count":0,"vrev":false,"breakout":true,"iv":"기+외","wick":2,"description":"11개월 박스권 후 거래대금 30배 폭증 양봉","confidence":85,"notes":"등락률 라벨 명확, 거래대금 막대로 추정"}`;
+【분석 단계 — 순서대로 실행】
+
+STEP 1: 등락률 (ch) 추출
+- 차트 우측 상단 또는 시그널 봉 위/아래에 "+12.45%" 형태의 텍스트 라벨이 있는지 먼저 확인.
+- 라벨이 명확하면 그 값을 그대로 사용.
+- 라벨 없으면: 시그널 봉의 종가와 직전 봉 종가를 비교한 비율을 추정 (단, confidence 낮춤).
+- 예: "12.34%" 라벨 보임 → ch=12.34. 라벨 안 보임 → ch=null.
+
+STEP 2: 거래대금 (amt) 추출 — 단위 매우 주의!
+- 차트 하단의 거래량 막대 영역을 보세요.
+- 거래량 막대 위/옆에 숫자 라벨이 있을 수 있습니다 (예: "150,000,000원" 또는 "1500억" 또는 "1.5조").
+- 단위 환산:
+  · 1,000,000,000원 = 10억원
+  · 100,000,000,000원 = 1000억원 = 1천억
+  · 1,000,000,000,000원 = 1조원 = 10000억
+  · 7,000,000,000,000원 = 7조원 = 7000억 ← 매우 흔한 케이스!
+- "7000억" 라벨이 직접 보이면 amt=7000.
+- "거래량(주식수)" 만 보이면: 거래량 × 종가 / 100,000,000 = 거래대금(억).
+- 거래대금/거래량 둘 다 안 보이면 amt=null. **절대 추측해서 800억, 1000억 같은 값 넣지 마세요.**
+
+STEP 3: 60일/120일 신고가
+- 시그널 봉 직전 60거래일(약 3개월) 동안의 최고가와 시그널 봉 종가 비교.
+- 시그널 종가 ≥ 60일 최고가의 97% → h60=true.
+- 마찬가지로 120일(약 6개월) → h120.
+
+STEP 4: 박스권 패턴 (핵심!)
+- 박스권 = 가격이 좁은 범위에서 횡보하는 구간.
+- 다음 모두 만족하면 box=true:
+  · 시그널 직전 N개월간 가격 변동폭이 좁음 (최고가/최저가 비율 < 1.5).
+  · 시그널 봉이 박스 상단을 돌파하거나 근접한 모양.
+- box_months: 박스권 시작 ~ 시그널까지 개월수.
+
+STEP 5: 다중 저항 터치 (resistance_touches)
+- 박스권 상단 라인(저항선)을 봉의 고가가 터치한 횟수.
+- 일반적으로 박스권 돌파 = 3회 이상 저항을 친 후 돌파.
+- 0~10 사이 정수.
+
+STEP 6: 양봉 몸통 돌파 (body_breakout)
+- 시그널 양봉의 종가가 60일 최고가(저항선)를 명확히 위로 돌파했는지.
+- 꼬리만 위로 가고 종가는 박스 안이면 false.
+- 종가가 저항선 위면 true.
+
+STEP 7: 이평선 (5/20/60/120일)
+- 차트에 이평선이 그려져 있으면 시그널 봉 위치에서의 배열을 판정.
+- ma_align: "정배열" (5>20>60>120) / "단기정배열" (5>20>60) / "혼조" / "단기역배열" / "역배열".
+- 이평선 안 보이면 ma_align=null.
+
+STEP 8: V자 반등 (vrev)
+- 시그널 직전 1년+ 동안 명백한 하락 추세 후 반등하는 경우만 true.
+
+STEP 9: 윗꼬리 (wick)
+- 시그널 봉의 (고가-종가) / 시가 × 100.
+- 시가, 종가, 고가가 명확히 보이면 계산. 안 보이면 null.
+
+STEP 10: 자기 검증
+- 모든 값이 차트에서 직접 보이는 숫자 기반인가? 추정한 게 있다면 confidence를 낮추세요.
+- ch와 amt가 정확히 보이면 confidence 80+, 거래대금만 추정하면 60~70, 둘 다 추정하면 40~50.
+
+【출력】
+JSON만 (마크다운 X):
+
+{
+  "ch": 12.45,
+  "amt": 7000,
+  "price": 12500,
+  "h60": false,
+  "h120": false,
+  "box": true,
+  "box_months": 4,
+  "left_signal": false,
+  "left_signal_count": 0,
+  "vrev": false,
+  "breakout": true,
+  "body_breakout": true,
+  "resistance_touches": 3,
+  "ma_align": "혼조",
+  "iv": null,
+  "wick": 1.5,
+  "description": "4개월 박스권에서 저항 3회 터치 후 거래대금 7천억 동반 몸통 돌파",
+  "confidence": 85,
+  "notes": "등락률·거래대금 라벨 모두 명확. 이평선 흐릿함."
+}`;
+
+      const userContent = [
+        { type: "image", source: { type: "base64", media_type: mediaType, data } },
+        { type: "text", text: prompt },
+      ];
+
+      // 학습 차트가 있으면 추가 비교 프롬프트
+      if (learningExamples.length > 0) {
+        userContent.push({
+          type: "text",
+          text: `\n\n【추가: 학습 차트 시각 비교】\n사용자가 이전에 학습시킨 차트 ${learningExamples.length}개를 첨부합니다.\n위 메인 차트가 각 학습 차트와 시각적으로 얼마나 비슷한지 0~100으로 평가하고, JSON에 visual_similarity 필드를 추가하세요:\n\n"visual_similarity": [\n  {"typeId": 1, "typeName": "박스권 돌파", "score": 85, "reason": "유사한 박스권 형태와 거래량 폭증"},\n  ...\n]`,
+        });
+        for (const ex of learningExamples) {
+          userContent.push({
+            type: "image",
+            source: { type: "base64", media_type: ex.mediaType, data: ex.data },
+          });
+          userContent.push({
+            type: "text",
+            text: `위 차트는 TYPE ${ex.typeId} (${ex.typeName}) 학습 예시 (등락 +${ex.ch}%, 거래대금 ${ex.amt}억)`,
+          });
+        }
+      }
 
       const res = await fetch(SECTOR_API + "/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514", max_tokens: 1000,
-          messages: [{
-            role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: mediaType, data } },
-              { type: "text", text: prompt },
-            ],
-          }],
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2000,
+          messages: [{ role: "user", content: userContent }],
         }),
       });
       const json = await res.json();
@@ -1694,9 +1900,36 @@ JSON만 반환:
         sigs: (parsed.left_signal_count || 0) + 1,
         wick: parsed.wick ?? wick, iv: parsed.iv || iv,
         aiBox: !!parsed.box, aiBreakout: !!parsed.breakout, aiVrev: !!parsed.vrev,
+        aiBodyBreakout: !!parsed.body_breakout,
+        aiResistanceTouches: parsed.resistance_touches || 0,
+        aiMaAlign: parsed.ma_align || null,
         aiLeftSignal: !!parsed.left_signal,
       };
-      const ranked = matchAllTypes(input, customCriteria);
+      let ranked = matchAllTypes(input, customCriteria);
+      
+      // 학습 차트 시각 비교 점수가 있으면 매칭%에 반영 (50/50 가중치)
+      if (parsed.visual_similarity && Array.isArray(parsed.visual_similarity)) {
+        const visMap = {};
+        for (const vs of parsed.visual_similarity) {
+          visMap[vs.typeId] = vs;
+        }
+        ranked = ranked.map(r => {
+          const vs = visMap[r.typeId];
+          if (vs && vs.score != null) {
+            // 데이터 매칭% 60% + 시각 매칭% 40%
+            const blended = Math.round(r.match * 0.6 + vs.score * 0.4);
+            return {
+              ...r,
+              match: blended,
+              dataMatch: r.match,
+              visualMatch: vs.score,
+              visualReason: vs.reason,
+            };
+          }
+          return r;
+        }).sort((a, b) => b.match - a.match);
+      }
+      
       setResults({ input, ranked });
     } catch (e) {
       setAiError(e.message);
@@ -2247,6 +2480,7 @@ function CriteriaEditor({ typeId, criteria, userPatternCount, onSave, onReset, o
       <NumRow label="거래대금 (억)" k1="amtMin" k2="amtMax" unit="억" />
       <NumRow label="60일 변동폭 (%)" k1="range60Min" k2="range60Max" unit="%" />
       <NumRow label="시그널 빈도 (회)" k1="sigsMin" k2="sigsMax" unit="회" />
+      <NumRow label="저항 터치 (회)" k1="resistanceMin" k2="resistanceMax" unit="회" />
 
       <div style={{ marginBottom: 10 }}>
         <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 4 }}>윗꼬리 max (%)</div>
@@ -2260,10 +2494,41 @@ function CriteriaEditor({ typeId, criteria, userPatternCount, onSave, onReset, o
 
       <RuleSelector label="60일 신고가" value={c.h60} onChange={v => set("h60", v)} />
       <RuleSelector label="120일 신고가" value={c.h120} onChange={v => set("h120", v)} />
-      <RuleSelector label="박스권 (60일 변동폭 작음)" value={c.isBox} onChange={v => set("isBox", v)} />
-      <RuleSelector label="매물대 돌파 (박스권 위 돌파)" value={c.isBreakout} onChange={v => set("isBreakout", v)} />
-      <RuleSelector label="정배열 추세 (60일 신고가+상승)" value={c.isUptrend} onChange={v => set("isUptrend", v)} />
-      <RuleSelector label="V자 반등 (60일 평균 미만 반등)" value={c.isVRev} onChange={v => set("isVRev", v)} />
+      <RuleSelector label="박스권 (변동폭 작고 횡보)" value={c.isBox} onChange={v => set("isBox", v)} />
+      <RuleSelector label="박스 돌파 (저항 3회+ 후 돌파)" value={c.isBreakout} onChange={v => set("isBreakout", v)} />
+      <RuleSelector label="양봉 몸통 돌파 (꼬리 X)" value={c.bodyBreakout || "any"} onChange={v => set("bodyBreakout", v)} />
+      <RuleSelector label="정배열 추세 (이평선 상승배열)" value={c.isUptrend} onChange={v => set("isUptrend", v)} />
+      <RuleSelector label="V자 반등 (저점에서 반등)" value={c.isVRev} onChange={v => set("isVRev", v)} />
+
+      {/* 이평배열 다중 선택 */}
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 4 }}>이평배열 허용 (다중 선택)</div>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {["정배열", "단기정배열", "혼조", "단기역배열", "역배열"].map(opt => {
+            const allowed = c.maAlignAllowed || [];
+            const sel = allowed.includes(opt);
+            return (
+              <button key={opt}
+                onClick={() => {
+                  const next = sel ? allowed.filter(x => x !== opt) : [...allowed, opt];
+                  set("maAlignAllowed", next);
+                }}
+                style={{
+                  flex: 1, minWidth: 70,
+                  padding: "6px 8px", fontSize: 11, fontWeight: 700,
+                  background: sel
+                    ? (opt === "정배열" ? "#a855f7" : opt === "단기정배열" ? "#10b981" : opt === "역배열" ? "#ef4444" : opt === "단기역배열" ? "#fbbf24" : "#64748b")
+                    : "#0f172a",
+                  color: sel ? "#fff" : "#94a3b8",
+                  border: "1px solid " + (sel ? "currentColor" : "#334155"),
+                  borderRadius: 4, cursor: "pointer",
+                }}>
+                {sel ? "✓ " : ""}{opt}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <div style={{ marginBottom: 10 }}>
         <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 4 }}>수급 허용 (다중 선택)</div>
@@ -2354,6 +2619,27 @@ function MatchResultCard({ result, canSave, onSave }) {
         </div>
       </div>
 
+      {/* 데이터/시각 분리 표시 */}
+      {result.dataMatch != null && result.visualMatch != null && (
+        <div style={{
+          display: "grid", gridTemplateColumns: "1fr 1fr",
+          gap: 6, marginBottom: 8,
+        }}>
+          <div style={{
+            padding: "6px 8px", background: "#1e293b", borderRadius: 4,
+            fontSize: 11, textAlign: "center",
+          }}>
+            📊 데이터 <b style={{color:"#fbbf24", fontSize:14}}>{result.dataMatch}%</b>
+          </div>
+          <div style={{
+            padding: "6px 8px", background: "#1e293b", borderRadius: 4,
+            fontSize: 11, textAlign: "center",
+          }}>
+            👁️ 시각 <b style={{color:"#a855f7", fontSize:14}}>{result.visualMatch}%</b>
+          </div>
+        </div>
+      )}
+
       {/* 점수 바 */}
       <div style={{
         height: 8, background: "#1e293b",
@@ -2365,12 +2651,23 @@ function MatchResultCard({ result, canSave, onSave }) {
         }} />
       </div>
 
+      {/* AI 시각 비교 사유 */}
+      {result.visualReason && (
+        <div style={{
+          padding: "6px 8px", background: "rgba(168,85,247,0.1)",
+          border: "1px solid rgba(168,85,247,0.3)", borderRadius: 4,
+          fontSize: 11, color: "#cbd5e1", marginBottom: 8,
+        }}>
+          👁️ <b style={{color:"#a855f7"}}>AI 시각 비교:</b> {result.visualReason}
+        </div>
+      )}
+
       {/* 매칭 사유 */}
       <details style={{ marginBottom: 8 }}>
         <summary style={{
           fontSize: 12, color: "#94a3b8", cursor: "pointer", fontWeight: 700,
         }}>
-          📋 매칭 사유 보기
+          📋 데이터 매칭 사유 ({result.reasons.length}건)
         </summary>
         <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
           {result.reasons.map((r, i) => (
@@ -2491,7 +2788,7 @@ function SyncDetailModal({ sig, onClose }) {
             marginBottom: 14,
           }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: "#fbbf24", marginBottom: 8 }}>
-              🔬 박스권 / 추세 검증 (60일 일봉 기준)
+              🔬 차트 패턴 검증 (60일 일봉 기준)
             </div>
             <div style={{
               fontSize: 12, color: "#10b981", fontWeight: 700,
@@ -2500,33 +2797,77 @@ function SyncDetailModal({ sig, onClose }) {
             }}>
               💡 {v.reason}
             </div>
+
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#fbbf24", marginBottom: 4, marginTop: 6 }}>
+              📈 가격 / 변동폭
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px", fontSize: 11, color: "#cbd5e1" }}>
               <div>오늘 종가: <b>{v.todayClose.toLocaleString()}원</b></div>
-              <div>60일 평균: <b>{v.avg60.toLocaleString()}원</b></div>
+              <div>오늘 시가: <b>{v.todayOpen ? v.todayOpen.toLocaleString() : "?"}원</b></div>
               <div>60일 최고가: <b style={{color:"#10b981"}}>{v.high60.toLocaleString()}</b></div>
               <div>60일 최저가: <b style={{color:"#ef4444"}}>{v.low60.toLocaleString()}</b></div>
+              <div>60일 평균: <b>{v.avg60.toLocaleString()}원</b></div>
               <div>60일 변동폭: <b style={{color:v.range60>30?"#a855f7":"#10b981"}}>{v.range60}%</b></div>
+              <div>고가 대비: <b>{v.closeVsHigh}%</b></div>
               <div>평균 대비: <b style={{color:v.closeVsAvg>115?"#a855f7":v.closeVsAvg<85?"#ef4444":"#10b981"}}>
                 {v.closeVsAvg > 100 ? "+" : ""}{(v.closeVsAvg - 100).toFixed(1)}%
               </b></div>
-              <div>고가 대비: <b>{v.closeVsHigh}%</b></div>
-              <div>저가 대비: <b>+{(v.closeVsLow - 100).toFixed(0)}%</b></div>
-              <div>60일 신고가: <b style={{color:v.h60?"#a855f7":"#94a3b8"}}>{v.h60?"O (갱신 근처)":"X"}</b></div>
-              <div>120일 신고가: <b style={{color:v.h120?"#a855f7":"#94a3b8"}}>{v.h120?"O":"X"}</b></div>
+            </div>
+
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#a855f7", marginBottom: 4, marginTop: 10 }}>
+              📊 이동평균선
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px", fontSize: 11, color: "#cbd5e1" }}>
+              <div>5일선: <b>{v.ma5 ? v.ma5.toLocaleString() : "?"}</b></div>
+              <div>20일선: <b>{v.ma20 ? v.ma20.toLocaleString() : "?"}</b></div>
+              <div>60일선: <b>{v.ma60 ? v.ma60.toLocaleString() : "?"}</b></div>
+              <div>120일선: <b>{v.ma120 ? v.ma120.toLocaleString() : "?"}</b></div>
+              <div style={{ gridColumn: "span 2", marginTop: 4 }}>
+                이평배열: <b style={{
+                  color: v.maAlign === "정배열" ? "#a855f7" :
+                         v.maAlign === "단기정배열" ? "#10b981" :
+                         v.maAlign === "역배열" ? "#ef4444" :
+                         v.maAlign === "단기역배열" ? "#fbbf24" : "#94a3b8",
+                  padding: "2px 6px", border: "1px solid currentColor",
+                  borderRadius: 3, marginLeft: 4,
+                }}>{v.maAlign || "?"}</b>
+                {v.goldenCross && (
+                  <span style={{
+                    marginLeft: 6, color: "#10b981", fontWeight: 700,
+                    border: "1px solid #10b981", padding: "2px 6px", borderRadius: 3,
+                  }}>✨ 골든크로스</span>
+                )}
+              </div>
+            </div>
+
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#ec4899", marginBottom: 4, marginTop: 10 }}>
+              🎯 패턴 판정
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px", fontSize: 11, color: "#cbd5e1" }}>
+              <div>저항 터치: <b style={{color:v.resistanceTouches>=3?"#f97316":"#94a3b8"}}>
+                {v.resistanceTouches}회
+              </b></div>
+              <div>몸통 돌파: <b style={{color:v.bodyBreakout?"#fbbf24":"#94a3b8"}}>
+                {v.bodyBreakout?"YES":"NO"}
+              </b></div>
               <div>📦 박스권: <b style={{color:v.isBox?"#10b981":"#94a3b8"}}>{v.isBox?"YES":"NO"}</b></div>
               <div>🚀 박스 돌파: <b style={{color:v.isBreakout?"#ec4899":"#94a3b8"}}>{v.isBreakout?"YES":"NO"}</b></div>
-              <div>📈 정배열: <b style={{color:v.isUptrend?"#a855f7":"#94a3b8"}}>{v.isUptrend?"YES":"NO"}</b></div>
+              <div>📈 정배열 추세: <b style={{color:v.isUptrend?"#a855f7":"#94a3b8"}}>{v.isUptrend?"YES":"NO"}</b></div>
               <div>🔄 V자 반등: <b style={{color:v.isVRev?"#0ea5e9":"#94a3b8"}}>{v.isVRev?"YES":"NO"}</b></div>
-              <div>시그널 빈도: <b>{v.sigs}회 (60일)</b></div>
+              <div>60일 신고가: <b>{v.h60?"O":"X"}</b></div>
+              <div>120일 신고가: <b>{v.h120?"O":"X"}</b></div>
+              <div>시그널 빈도: <b>{v.sigs}회 (60일내)</b></div>
             </div>
+
             <div style={{
               marginTop: 8, padding: "6px 10px",
               background: "#1e293b", borderRadius: 4,
               fontSize: 10, color: "#64748b",
             }}>
-              📦 박스권 = 변동폭 &lt; 30% + 신고가 X + 평균 ±15% 안<br/>
-              📈 정배열 = 60일 신고가 OR (변동폭 30%+ AND 평균 +10%↑)<br/>
-              🔄 V자 반등 = 평균 92% 미만 + 신고가 X
+              📦 박스권 = 변동폭 &lt; 35% + 신고가 X + 저항 2회+ + 평균 ±20%<br/>
+              🚀 박스 돌파 = 박스권 + 저항 3회+ + (몸통 돌파 OR 박스 상단 종가)<br/>
+              📈 정배열 = 이평 정배열 OR 신고가 OR (변동폭 35%+ AND 평균 +10%↑)<br/>
+              🔄 V반등 = 이평 역배열 OR 평균 92% 미만 + 신고가 X
             </div>
           </div>
         )}
