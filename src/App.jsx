@@ -859,34 +859,164 @@ function SigRow({ sig, rank, onClick }) {
   );
 }
 
+// ───── 백테스트 시뮬 (1개 조합 평가) ─────
+function simulateBacktest(matched, tp, sl, holdMax) {
+  let win = 0, loss = 0, timeout = 0;
+  let totalGain = 0;
+  let totalDays = 0;
+  const gains = [];
+
+  for (const s of matched) {
+    const tpKey = `tp${tp}`;
+    const slKey = `sl${sl}`;
+    let tpDay = s[tpKey];
+    if (tpDay === undefined) {
+      const tpKeys = [3,5,7,10,15,20,30,50];
+      const above = tpKeys.find(k => k >= tp);
+      tpDay = above ? s[`tp${above}`] : -1;
+    }
+    let slDay = s[slKey];
+    if (slDay === undefined) {
+      const slKeys = [2,3,5,7,10,15];
+      const above = slKeys.find(k => k >= sl);
+      slDay = above ? s[`sl${above}`] : -1;
+    }
+    if (tpDay == null) tpDay = -1;
+    if (slDay == null) slDay = -1;
+    if (tpDay > holdMax) tpDay = -1;
+    if (slDay > holdMax) slDay = -1;
+
+    let gain, days;
+    if (tpDay > 0 && (slDay < 0 || tpDay <= slDay)) {
+      gain = tp; days = tpDay; win++;
+    } else if (slDay > 0) {
+      gain = -sl; days = slDay; loss++;
+    } else {
+      const holdN = Math.min(holdMax, 20);
+      const closeKey = holdN >= 20 ? "c20" : holdN >= 10 ? "c10" : holdN >= 5 ? "c5" : "c3";
+      gain = s[closeKey] ?? 0;
+      days = holdN; timeout++;
+    }
+    totalGain += gain;
+    totalDays += days;
+    gains.push(gain);
+  }
+
+  const n = matched.length;
+  const avgGain = totalGain / n;
+  const avgDays = totalDays / n;
+  const winRate = win / n * 100;
+  // 표준편차 (안정성 지표)
+  const variance = gains.reduce((s,g) => s + (g - avgGain)**2, 0) / n;
+  const stdDev = Math.sqrt(variance);
+
+  return {
+    n, win, loss, timeout,
+    winRate, avgGain, avgDays, stdDev,
+    gainPerDay: avgDays > 0 ? avgGain / avgDays : 0,
+    sharpe: stdDev > 0 ? avgGain / stdDev : 0,
+  };
+}
+
+// ───── 그리드 서치 (TP × SL × 보유기간 최적 탐색) ─────
+function gridSearchOptimize(matched, mode, minWinRate) {
+  // 데이터 컬럼에 있는 값들만 시도 (속도 + 보간 정확)
+  const tps = [5, 7, 10, 15, 20, 25, 30];
+  const sls = [2, 3, 5, 7, 10];
+  const holds = [5, 10, 15, 20, 25, 30];
+  const candidates = [];
+
+  for (const tp of tps) {
+    for (const sl of sls) {
+      for (const hold of holds) {
+        if (tp <= sl) continue;  // TP는 SL보다 커야 함
+        const r = simulateBacktest(matched, tp, sl, hold);
+        if (minWinRate > 0 && r.winRate < minWinRate) continue;
+        candidates.push({ tp, sl, hold, ...r });
+      }
+    }
+  }
+  if (candidates.length === 0) return null;
+
+  // 모드별 정렬
+  let sorted;
+  if (mode === "max-return") {
+    // 가장 높은 수익률
+    sorted = candidates.sort((a, b) => b.avgGain - a.avgGain);
+  } else if (mode === "short-hold") {
+    // 단기 (수익/일 가중치)
+    sorted = candidates.sort((a, b) => b.gainPerDay - a.gainPerDay);
+  } else if (mode === "stable") {
+    // 안정 (Sharpe + 승률)
+    sorted = candidates.sort((a, b) => {
+      const sa = a.sharpe * (a.winRate / 100);
+      const sb = b.sharpe * (b.winRate / 100);
+      return sb - sa;
+    });
+  } else {
+    sorted = candidates.sort((a, b) => b.avgGain - a.avgGain);
+  }
+
+  return {
+    best: sorted[0],
+    top5: sorted.slice(0, 5),
+    totalCandidates: candidates.length,
+  };
+}
+
 // ───── 탭: 백테스트 (TP/SL 시뮬) ─────
 function BacktestTab() {
   const [typeId, setTypeId] = useState(1);
-  const [tp, setTp] = useState(7);     // TP %
-  const [sl, setSl] = useState(3);     // SL %
-  const [budget, setBudget] = useState(300);  // 만원
-  const [holdMax, setHoldMax] = useState(20); // 최대 보유일
+  const [tp, setTp] = useState(7);
+  const [sl, setSl] = useState(3);
+  const [budget, setBudget] = useState(300);
+  const [holdMax, setHoldMax] = useState(20);
+
+  // 최적화 옵션
+  const [optMode, setOptMode] = useState(null);  // null/"max-return"/"short-hold"/"stable"
+  const [minWinRate, setMinWinRate] = useState(0);
+  const [optResult, setOptResult] = useState(null);
+  const [optimizing, setOptimizing] = useState(false);
 
   const type = PATTERN_TYPES.find(t => t.id === typeId);
 
+  // 매칭 시그널 캐싱
+  const matched = useMemo(() => {
+    return signalsData.filter(s => matchType(s, DEFAULT_CRITERIA[typeId], typeId));
+  }, [typeId]);
+
+  // 자동 최적화 실행
+  function runOptimize(mode) {
+    if (matched.length === 0) return;
+    setOptimizing(true);
+    setOptMode(mode);
+    setTimeout(() => {
+      const opt = gridSearchOptimize(matched, mode, minWinRate);
+      setOptResult(opt);
+      if (opt && opt.best) {
+        setTp(opt.best.tp);
+        setSl(opt.best.sl);
+        setHoldMax(opt.best.hold);
+      }
+      setOptimizing(false);
+    }, 50);
+  }
+
   const result = useMemo(() => {
-    // 매칭 시그널
-    const matched = signalsData.filter(s => matchType(s, DEFAULT_CRITERIA[typeId], typeId));
     if (matched.length === 0) return null;
 
     // 각 시그널마다 TP/SL 시뮬
     let win = 0, loss = 0, timeout = 0;
-    let totalGain = 0;          // % 합 (단순 산술 평균용)
+    let totalGain = 0;
     let totalDays = 0;
     const winDays = [];
     const lossDays = [];
-    const allOutcomes = [];     // 최근 사례용
+    const allOutcomes = [];
 
     for (const s of matched) {
-      // TP/SL 도달 일수 — 보간 (3,5,7,10,15,20,30,50)
       const tpKey = `tp${tp}`;
       const slKey = `sl${sl}`;
-      let tpDay = s[tpKey];      // 없으면 가장 가까운 값 보간
+      let tpDay = s[tpKey];
       if (tpDay === undefined) {
         const tpKeys = [3,5,7,10,15,20,30,50];
         const above = tpKeys.find(k => k >= tp);
@@ -901,27 +1031,17 @@ function BacktestTab() {
       if (tpDay == null) tpDay = -1;
       if (slDay == null) slDay = -1;
 
-      // 보유 기간 제한
       if (tpDay > holdMax) tpDay = -1;
       if (slDay > holdMax) slDay = -1;
 
       let outcome, gain, days;
       if (tpDay > 0 && (slDay < 0 || tpDay <= slDay)) {
-        // TP 먼저 도달
-        outcome = "TP";
-        gain = tp;
-        days = tpDay;
-        win++;
+        outcome = "TP"; gain = tp; days = tpDay; win++;
         winDays.push(days);
       } else if (slDay > 0) {
-        // SL 먼저 도달
-        outcome = "SL";
-        gain = -sl;
-        days = slDay;
-        loss++;
+        outcome = "SL"; gain = -sl; days = slDay; loss++;
         lossDays.push(days);
       } else {
-        // 타임아웃 — holdMax일째 종가
         outcome = "TO";
         const holdN = Math.min(holdMax, 20);
         const closeKey = holdN >= 20 ? "c20" : holdN >= 10 ? "c10" : holdN >= 5 ? "c5" : "c3";
@@ -932,9 +1052,7 @@ function BacktestTab() {
 
       totalGain += gain;
       totalDays += days;
-      allOutcomes.push({
-        ...s, outcome, gain: +gain.toFixed(2), days
-      });
+      allOutcomes.push({ ...s, outcome, gain: +gain.toFixed(2), days });
     }
 
     const n = matched.length;
@@ -942,12 +1060,10 @@ function BacktestTab() {
     const avgGain = totalGain/n;
     const avgDays = totalDays/n;
 
-    // 매수금액 기준 수익금
-    const budgetWon = budget * 10000;  // 만원 → 원
+    const budgetWon = budget * 10000;
     const profitPerTrade = budgetWon * avgGain / 100;
     const totalProfit = profitPerTrade * n;
     
-    // 연도별 통계
     const byYr = {};
     for (const o of allOutcomes) {
       const yy = "20" + o.date.slice(0, 2);
@@ -959,19 +1075,15 @@ function BacktestTab() {
 
     return {
       n, win, loss, timeout,
-      winRate,
-      lossRate: loss/n*100,
-      toRate: timeout/n*100,
+      winRate, lossRate: loss/n*100, toRate: timeout/n*100,
       avgGain, avgDays,
       avgWinDays: winDays.length ? winDays.reduce((a,b)=>a+b,0)/winDays.length : 0,
       avgLossDays: lossDays.length ? lossDays.reduce((a,b)=>a+b,0)/lossDays.length : 0,
       profitPerTrade, totalProfit,
       byYr,
-      recent: allOutcomes
-        .sort((a,b) => b.date.localeCompare(a.date))
-        .slice(0, 10),
+      recent: allOutcomes.sort((a,b) => b.date.localeCompare(a.date)).slice(0, 10),
     };
-  }, [typeId, tp, sl, holdMax]);
+  }, [matched, tp, sl, holdMax, budget]);
 
   return (
     <div>
@@ -999,20 +1111,170 @@ function BacktestTab() {
         </div>
       </div>
 
+      {/* 🎯 자동 최적화 */}
+      <div style={{
+        background:"#1e293b", border:"2px solid #fbbf24",
+        borderRadius:10, padding:14, marginBottom:12,
+      }}>
+        <div style={{ fontSize:14, fontWeight:800, color:"#fbbf24", marginBottom:6 }}>
+          🎯 자동 최적화 ({matched.length}건 매칭)
+        </div>
+        <div style={{ fontSize:11, color:"#94a3b8", marginBottom:10 }}>
+          TP × SL × 보유 약 200~300조합 그리드 서치 → 최적 자동 추천
+        </div>
+
+        {/* 승률 필터 */}
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize:12, color:"#cbd5e1", marginBottom: 4 }}>
+            최소 승률 필터
+          </div>
+          <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+            {[0, 30, 40, 50, 60, 70].map(v => (
+              <button key={v} onClick={() => setMinWinRate(v)}
+                style={{
+                  flex: 1, minWidth: 50,
+                  background: minWinRate === v ? "#0ea5e9" : "#0f172a",
+                  color: minWinRate === v ? "#fff" : "#94a3b8",
+                  border: "1px solid " + (minWinRate === v ? "#0ea5e9" : "#334155"),
+                  borderRadius: 4, padding: "6px 8px",
+                  fontSize: 12, fontWeight: 700, cursor: "pointer",
+                }}>
+                {v === 0 ? "무관" : v + "%↑"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 모드 버튼 */}
+        <div style={{ display:"grid", gridTemplateColumns: "1fr 1fr 1fr", gap:6 }}>
+          <button onClick={() => runOptimize("max-return")} disabled={optimizing}
+            style={{
+              padding:"10px 8px", fontSize:12, fontWeight:800,
+              background: optMode === "max-return" ? "#10b981" : "#0f172a",
+              color: optMode === "max-return" ? "#fff" : "#10b981",
+              border: "1px solid #10b981", borderRadius: 6, cursor: optimizing?"wait":"pointer",
+            }}>
+            💰<br/>최고 수익률
+          </button>
+          <button onClick={() => runOptimize("short-hold")} disabled={optimizing}
+            style={{
+              padding:"10px 8px", fontSize:12, fontWeight:800,
+              background: optMode === "short-hold" ? "#fbbf24" : "#0f172a",
+              color: optMode === "short-hold" ? "#0f172a" : "#fbbf24",
+              border: "1px solid #fbbf24", borderRadius: 6, cursor: optimizing?"wait":"pointer",
+            }}>
+            ⚡<br/>단기 (수익/일)
+          </button>
+          <button onClick={() => runOptimize("stable")} disabled={optimizing}
+            style={{
+              padding:"10px 8px", fontSize:12, fontWeight:800,
+              background: optMode === "stable" ? "#0ea5e9" : "#0f172a",
+              color: optMode === "stable" ? "#fff" : "#0ea5e9",
+              border: "1px solid #0ea5e9", borderRadius: 6, cursor: optimizing?"wait":"pointer",
+            }}>
+            🛡️<br/>안정 수익
+          </button>
+        </div>
+
+        {optimizing && (
+          <div style={{ marginTop: 10, fontSize: 12, color: "#fbbf24", textAlign: "center" }}>
+            🔄 그리드 서치 중...
+          </div>
+        )}
+
+        {optResult && optResult.best && !optimizing && (
+          <div style={{
+            marginTop: 12, padding: 12,
+            background: "#0f172a",
+            border: "1px solid " + (optMode === "max-return" ? "#10b981" : optMode === "short-hold" ? "#fbbf24" : "#0ea5e9"),
+            borderRadius: 8,
+          }}>
+            <div style={{
+              fontSize: 12, fontWeight: 800,
+              color: optMode === "max-return" ? "#10b981" : optMode === "short-hold" ? "#fbbf24" : "#0ea5e9",
+              marginBottom: 8,
+            }}>
+              ✅ 최적 조합 발견 ({optMode === "max-return" ? "최고 수익" : optMode === "short-hold" ? "단기" : "안정"})
+            </div>
+            <div style={{
+              display:"grid", gridTemplateColumns:"1fr 1fr 1fr",
+              gap:8, marginBottom: 10,
+            }}>
+              <div style={{ textAlign:"center", padding:8, background:"#1e293b", borderRadius:6 }}>
+                <div style={{ fontSize:10, color:"#94a3b8" }}>TP</div>
+                <div style={{ fontSize:20, fontWeight:800, color:"#10b981" }}>+{optResult.best.tp}%</div>
+              </div>
+              <div style={{ textAlign:"center", padding:8, background:"#1e293b", borderRadius:6 }}>
+                <div style={{ fontSize:10, color:"#94a3b8" }}>SL</div>
+                <div style={{ fontSize:20, fontWeight:800, color:"#ef4444" }}>-{optResult.best.sl}%</div>
+              </div>
+              <div style={{ textAlign:"center", padding:8, background:"#1e293b", borderRadius:6 }}>
+                <div style={{ fontSize:10, color:"#94a3b8" }}>최대 보유</div>
+                <div style={{ fontSize:20, fontWeight:800, color:"#0ea5e9" }}>{optResult.best.hold}일</div>
+              </div>
+            </div>
+            <div style={{
+              display:"grid", gridTemplateColumns:"1fr 1fr",
+              gap:6, fontSize: 12, color: "#cbd5e1",
+            }}>
+              <div>평균 수익: <b style={{color:"#10b981"}}>+{optResult.best.avgGain.toFixed(2)}%</b></div>
+              <div>승률: <b style={{color:"#fbbf24"}}>{optResult.best.winRate.toFixed(1)}%</b></div>
+              <div>평균 보유: <b>{optResult.best.avgDays.toFixed(1)}일</b></div>
+              <div>일당 수익: <b style={{color:"#10b981"}}>+{optResult.best.gainPerDay.toFixed(3)}%/일</b></div>
+              <div>표준편차: <b>{optResult.best.stdDev.toFixed(2)}%</b></div>
+              <div>샤프지수: <b>{optResult.best.sharpe.toFixed(3)}</b></div>
+            </div>
+
+            {/* 상위 5개 */}
+            <details style={{ marginTop: 10 }}>
+              <summary style={{ fontSize:11, color:"#94a3b8", cursor:"pointer", fontWeight:700 }}>
+                📊 상위 5개 조합 (총 {optResult.totalCandidates}개 후보 중)
+              </summary>
+              <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
+                {optResult.top5.map((r, i) => (
+                  <div key={i} onClick={() => { setTp(r.tp); setSl(r.sl); setHoldMax(r.hold); }}
+                    style={{
+                      padding: "6px 8px", background: i === 0 ? "#1e293b" : "#0f172a",
+                      borderRadius: 4, fontSize: 11, color: "#cbd5e1",
+                      cursor: "pointer",
+                      border: i === 0 ? "1px solid #fbbf24" : "1px solid #334155",
+                    }}>
+                    #{i+1} TP+{r.tp}% / SL-{r.sl}% / {r.hold}일 →
+                    <b style={{color:"#10b981", marginLeft:4}}>+{r.avgGain.toFixed(2)}%</b>
+                    <span style={{color:"#fbbf24", marginLeft:4}}>승률 {r.winRate.toFixed(0)}%</span>
+                    <span style={{color:"#94a3b8", marginLeft:4}}>{r.avgDays.toFixed(1)}일</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          </div>
+        )}
+
+        {optResult === null && optMode && !optimizing && (
+          <div style={{
+            marginTop: 10, padding: 10,
+            background: "#7f1d1d", borderRadius: 6,
+            fontSize: 12, color: "#fecaca",
+          }}>
+            ⚠️ 조건에 맞는 조합 없음. 승률 필터 낮춰보세요.
+          </div>
+        )}
+      </div>
+
       {/* 슬라이더 */}
       <div style={{
         background:"#1e293b", border:"1px solid #334155",
         borderRadius:10, padding:14, marginBottom:12,
       }}>
         <div style={{ fontSize:13, fontWeight:700, color:"#fbbf24", marginBottom:10 }}>
-          매매 조건 ({type.icon} {type.name})
+          📊 매매 조건 수동 조정 ({type.icon} {type.name})
         </div>
         <SliderRow label="🎯 TP (익절 %)" value={tp}
           options={[3, 5, 7, 10, 15, 20, 30]} onChange={setTp} unit="%" color="#10b981" />
         <SliderRow label="🛑 SL (손절 %)" value={sl}
           options={[2, 3, 5, 7, 10]} onChange={setSl} unit="%" color="#ef4444" />
         <SliderRow label="⏰ 최대 보유" value={holdMax}
-          options={[3, 5, 10, 20, 60]} onChange={setHoldMax} unit="일" color="#0ea5e9" />
+          options={[3, 5, 10, 15, 20, 25, 30]} onChange={setHoldMax} unit="일" color="#0ea5e9" />
         <SliderRow label="💰 매수금액" value={budget}
           options={[100, 200, 300, 500, 1000]} onChange={setBudget} unit="만원" color="#fbbf24" />
       </div>
@@ -1355,26 +1617,40 @@ function DefinitionsTab({
       const mediaType = m[1];
       const data = m[2];
 
-      const prompt = `이 한국 주식 일봉 차트를 분석해서 JSON으로만 답하세요. 마크다운 없이 순수 JSON만.
+      const prompt = `당신은 한국 주식 차트 분석 전문가입니다. 첨부된 일봉 차트 이미지를 매우 정밀하게 분석하세요.
 
-차트는 일봉 차트이며, 가장 우측의 큰 양봉(빨간 봉)이 시그널입니다.
+⚠️ 중요한 규칙:
+1. 추측하지 마세요. 차트에 명시되지 않은 값은 null로 반환하세요.
+2. 한국 차트 특성: 빨간색=상승, 파란색=하락 (서구와 반대)
+3. 가장 우측의 가장 큰 빨간 양봉이 시그널입니다.
+4. 등락률은 차트 상단/하단의 텍스트 또는 봉 옆 라벨에 표시됩니다. 텍스트가 보이지 않으면 null.
+5. 거래대금은 차트 하단 거래량 막대 아래의 숫자/Y축 라벨을 정확히 읽으세요.
+   - 한국 차트는 보통 "백만원" 또는 "원" 단위. "억" 단위 환산:
+     · 거래량(주식수) × 가격 / 100,000,000 = 거래대금(억원)
+     · 또는 거래대금 표시가 직접 있으면 단위를 정확히 환산하세요.
+   - 예: "70,000,000,000원" = 700억원, "7,000,000,000,000원" = 7000억원 = 7조
+   - 거래대금 라벨이 없으면 null. 절대 추측하지 마세요.
 
-다음 정보 추출:
-- ch: 시그널 양봉의 등락률 % (예: 16.67)
-- amt: 시그널 일자 거래대금 (억 단위)
-- h60: 시그널 직전 60일 동안 최고가를 갱신했는지 (true/false)
-- h120: 시그널 직전 120일 동안 최고가를 갱신했는지 (true/false)
-- box: 박스권 차트인지 (true/false)
-- box_months: 박스권 기간 (개월수, 0이면 박스권 아님)
-- left_signal: 좌측에 비슷한 큰 양봉 시그널이 있는지 (true/false)
-- left_signal_count: 좌측 시그널 횟수 (없으면 0)
-- vrev: V자 반등인지 (1년+ 하락 후 반등)
-- breakout: 박스권 매물대를 돌파했는지
-- iv: 수급 추정 ("기+외", "외만", "기만", "둘다-")
-- wick: 윗꼬리 % (시그널 봉)
-- description: 차트 한 줄 설명
+추출할 정보:
+- ch (number|null): 시그널 양봉의 정확한 등락률 % (소수점 둘째자리까지). 차트에 명시된 값만. 모르면 null.
+- amt (number|null): 시그널 일자 거래대금을 "억원" 단위로. 차트에 명시된 거래대금/거래량 라벨에서 정확히 추출. 환산 못하면 null.
+- price (number|null): 시그널 봉의 종가 (원). 라벨에 보이는 값.
+- h60 (boolean): 시그널 직전 60일(약 3개월) 최고가를 갱신했는지
+- h120 (boolean): 시그널 직전 120일(약 6개월) 최고가를 갱신했는지
+- box (boolean): 박스권 차트인지
+- box_months (number): 박스권 기간 (개월수, 0이면 박스권 아님)
+- left_signal (boolean): 좌측에 비슷한 큰 양봉이 있는지
+- left_signal_count (number): 좌측 시그널 횟수 (없으면 0)
+- vrev (boolean): 1년+ 하락 후 V자 반등인지
+- breakout (boolean): 박스권 매물대를 위로 돌파했는지
+- iv (string): 수급 추정. 차트만 보고는 모름. "차트만으로 추정 어려움"이면 null. 거래대금이 폭증한 시그널이면 "기+외" 추정 가능.
+- wick (number|null): 시그널 봉의 윗꼬리 % = (고가-종가)/시가 × 100. 봉 모양 보고 추정. 모르면 null.
+- description (string): 차트 한 줄 설명
+- confidence (number): 분석 자신감 0~100. 차트가 흐릿하거나 라벨이 안 보이면 50 미만.
+- notes (string): 분석 시 어려웠던 부분 또는 추정 근거
 
-JSON 예: {"ch":16.67,"amt":1108,"h60":false,"h120":false,"box":true,"box_months":11,"left_signal":false,"left_signal_count":0,"vrev":false,"breakout":true,"iv":"기+외","wick":2,"description":"11개월 박스권 후 거래대금 30배 폭증 양봉"}`;
+JSON만 반환:
+{"ch":16.67,"amt":1108,"price":12500,"h60":false,"h120":false,"box":true,"box_months":11,"left_signal":false,"left_signal_count":0,"vrev":false,"breakout":true,"iv":"기+외","wick":2,"description":"11개월 박스권 후 거래대금 30배 폭증 양봉","confidence":85,"notes":"등락률 라벨 명확, 거래대금 막대로 추정"}`;
 
       const res = await fetch(SECTOR_API + "/analyze", {
         method: "POST",
@@ -1401,6 +1677,7 @@ JSON 예: {"ch":16.67,"amt":1108,"h60":false,"h120":false,"box":true,"box_months
         throw new Error("JSON 파싱 실패: " + text.slice(0, 200));
       }
 
+      // null이 아닌 값만 폼에 채우기 (사용자가 채운 값 보존)
       if (parsed.ch != null) setCh(parsed.ch);
       if (parsed.amt != null) setAmt(parsed.amt);
       if (parsed.h60 != null) setH60(!!parsed.h60);
@@ -1518,17 +1795,53 @@ JSON 예: {"ch":16.67,"amt":1108,"h60":false,"h120":false,"box":true,"box_months
             border: "1px solid #fbbf24", borderRadius: 6,
             marginBottom: 10, fontSize: 12, color: "#cbd5e1",
           }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", marginBottom: 6 }}>
-              🤖 AI 분석 결과
+            <div style={{
+              display: "flex", justifyContent: "space-between",
+              alignItems: "center", marginBottom: 6,
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24" }}>
+                🤖 AI 분석 결과
+              </div>
+              {aiSummary.confidence != null && (
+                <div style={{
+                  fontSize: 11, fontWeight: 700,
+                  color: aiSummary.confidence >= 80 ? "#10b981" :
+                         aiSummary.confidence >= 50 ? "#fbbf24" : "#ef4444",
+                  border: "1px solid",
+                  borderColor: aiSummary.confidence >= 80 ? "#10b981" :
+                               aiSummary.confidence >= 50 ? "#fbbf24" : "#ef4444",
+                  padding: "2px 6px", borderRadius: 3,
+                }}>
+                  자신감 {aiSummary.confidence}%
+                </div>
+              )}
             </div>
             {aiSummary.description && (
               <div style={{ marginBottom: 6, fontStyle: "italic", color: "#fff" }}>
                 "{aiSummary.description}"
               </div>
             )}
+            {aiSummary.confidence != null && aiSummary.confidence < 70 && (
+              <div style={{
+                padding: 6, background: "#7f1d1d",
+                borderRadius: 4, fontSize: 11, color: "#fecaca",
+                marginBottom: 6,
+              }}>
+                ⚠️ AI 자신감이 낮습니다. 아래 폼에서 직접 수정하세요.
+              </div>
+            )}
+            {aiSummary.notes && (
+              <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 6 }}>
+                📝 {aiSummary.notes}
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-              <div>등락: <b style={{color:"#10b981"}}>+{aiSummary.ch}%</b></div>
-              <div>거래대금: <b>{aiSummary.amt}억</b></div>
+              <div>등락: <b style={{color:aiSummary.ch!=null?"#10b981":"#ef4444"}}>
+                {aiSummary.ch != null ? "+" + aiSummary.ch + "%" : "❌ 인식 실패"}
+              </b></div>
+              <div>거래대금: <b style={{color:aiSummary.amt!=null?"#10b981":"#ef4444"}}>
+                {aiSummary.amt != null ? aiSummary.amt + "억" : "❌ 인식 실패"}
+              </b></div>
               <div>박스권: <b style={{color:aiSummary.box?"#10b981":"#94a3b8"}}>
                 {aiSummary.box ? "O (" + aiSummary.box_months + "개월)" : "X"}
               </b></div>
@@ -1543,8 +1856,8 @@ JSON 예: {"ch":16.67,"amt":1108,"h60":false,"h120":false,"box":true,"box_months
               </b></div>
               <div>60일 신고가: <b>{aiSummary.h60?"O":"X"}</b></div>
               <div>120일 신고가: <b>{aiSummary.h120?"O":"X"}</b></div>
-              <div>수급: <b>{aiSummary.iv}</b></div>
-              <div>윗꼬리: <b>{aiSummary.wick}%</b></div>
+              <div>수급: <b>{aiSummary.iv || "❓ 불명"}</b></div>
+              <div>윗꼬리: <b>{aiSummary.wick != null ? aiSummary.wick + "%" : "❓"}</b></div>
             </div>
           </div>
         )}
@@ -1559,60 +1872,119 @@ JSON 예: {"ch":16.67,"amt":1108,"h60":false,"h120":false,"box":true,"box_months
             marginBottom: 10, boxSizing: "border-box",
           }} />
 
-        <details style={{ marginBottom: 6 }}>
-          <summary style={{ fontSize: 12, color: "#94a3b8", cursor: "pointer", fontWeight: 700 }}>
-            ✏️ 수동 입력 (AI 결과 수정 또는 직접 입력)
-          </summary>
-          <div style={{ marginTop: 8 }}>
-            <SliderRow label="등락률" value={ch}
-              options={[5,8,10,13,15,18,22,26,29]} onChange={setCh} unit="%" color="#10b981" />
-            <SliderRow label="거래대금" value={amt}
-              options={[100,300,500,800,1500,3000,5000,10000]} onChange={setAmt} unit="억" color="#fbbf24" />
-            <SliderRow label="시그널 빈도" value={sigs}
-              options={[1,2,3,5,10,20]} onChange={setSigs} unit="회" color="#0ea5e9" />
-            <SliderRow label="윗꼬리" value={wick}
-              options={[1,2,3,5,10]} onChange={setWick} unit="%" color="#a855f7" />
-            <div style={{ display: "flex", gap: 12, padding: "10px 0", fontSize: 13, color: "#cbd5e1", flexWrap: "wrap" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <input type="checkbox" checked={h60} onChange={e => setH60(e.target.checked)}
-                  style={{ width: 18, height: 18 }} />
-                60일 신고가
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <input type="checkbox" checked={h120} onChange={e => setH120(e.target.checked)}
-                  style={{ width: 18, height: 18 }} />
-                120일 신고가
-              </label>
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 6 }}>수급</div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {["기+외", "외만", "기만", "둘다-"].map(opt => (
-                  <button key={opt} onClick={() => setIv(opt)}
-                    style={{
-                      flex: 1, minWidth: 70,
-                      background: iv === opt ? "#10b981" : "#0f172a",
-                      color: iv === opt ? "#fff" : "#94a3b8",
-                      border: "1px solid " + (iv === opt ? "#10b981" : "#334155"),
-                      borderRadius: 6, padding: "8px 10px",
-                      fontSize: 13, fontWeight: 700, cursor: "pointer",
-                    }}>
-                    {opt}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button onClick={manualAnalyze}
-              style={{
-                width: "100%", padding: "10px",
-                background: "#0ea5e9", color: "#fff",
-                border: "none", borderRadius: 6,
-                fontSize: 13, fontWeight: 700, cursor: "pointer",
-              }}>
-              🎯 수동 입력으로 5타입 비교
-            </button>
+        {/* 사용자 수정 폼 — 항상 펼쳐짐 (AI 결과 수정 우선순위 높음) */}
+        <div style={{
+          padding: 12, background: "#0f172a",
+          border: "1px solid #10b981", borderRadius: 6,
+          marginTop: 8,
+        }}>
+          <div style={{
+            fontSize: 12, fontWeight: 700, color: "#10b981", marginBottom: 8,
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+          }}>
+            <span>✏️ 데이터 수정 ({aiSummary ? "AI 결과를 직접 수정하세요" : "직접 입력"})</span>
           </div>
-        </details>
+
+          {/* 등락률 — 직접 숫자 입력 */}
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: "#cbd5e1", marginBottom: 4 }}>
+              등락률 (%) — 차트의 정확한 값
+            </div>
+            <input type="number" value={ch} step="0.01"
+              onChange={e => setCh(parseFloat(e.target.value) || 0)}
+              style={{
+                width: "100%", padding: 8, fontSize: 14, fontWeight: 700,
+                background: "#1e293b", color: "#10b981",
+                border: "1px solid #334155", borderRadius: 4, boxSizing: "border-box",
+              }} />
+          </div>
+
+          {/* 거래대금 — 직접 숫자 입력 */}
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: "#cbd5e1", marginBottom: 4 }}>
+              거래대금 (억원) — 7000억이면 7000 입력
+            </div>
+            <input type="number" value={amt}
+              onChange={e => setAmt(parseFloat(e.target.value) || 0)}
+              style={{
+                width: "100%", padding: 8, fontSize: 14, fontWeight: 700,
+                background: "#1e293b", color: "#fbbf24",
+                border: "1px solid #334155", borderRadius: 4, boxSizing: "border-box",
+              }} />
+          </div>
+
+          {/* 윗꼬리 — 직접 숫자 입력 */}
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: "#cbd5e1", marginBottom: 4 }}>
+              윗꼬리 (%)
+            </div>
+            <input type="number" value={wick} step="0.1"
+              onChange={e => setWick(parseFloat(e.target.value) || 0)}
+              style={{
+                width: "100%", padding: 8, fontSize: 14, fontWeight: 700,
+                background: "#1e293b", color: "#a855f7",
+                border: "1px solid #334155", borderRadius: 4, boxSizing: "border-box",
+              }} />
+          </div>
+
+          {/* 시그널 빈도 */}
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: "#cbd5e1", marginBottom: 4 }}>
+              시그널 빈도 (회) — 좌측 시그널 + 1
+            </div>
+            <input type="number" value={sigs}
+              onChange={e => setSigs(parseInt(e.target.value) || 0)}
+              style={{
+                width: "100%", padding: 8, fontSize: 14, fontWeight: 700,
+                background: "#1e293b", color: "#0ea5e9",
+                border: "1px solid #334155", borderRadius: 4, boxSizing: "border-box",
+              }} />
+          </div>
+
+          {/* 체크박스 */}
+          <div style={{ display: "flex", gap: 12, padding: "10px 0", fontSize: 13, color: "#cbd5e1", flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="checkbox" checked={h60} onChange={e => setH60(e.target.checked)}
+                style={{ width: 18, height: 18 }} />
+              60일 신고가
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="checkbox" checked={h120} onChange={e => setH120(e.target.checked)}
+                style={{ width: 18, height: 18 }} />
+              120일 신고가
+            </label>
+          </div>
+
+          {/* 수급 */}
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 6 }}>수급</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {["기+외", "외만", "기만", "둘다-"].map(opt => (
+                <button key={opt} onClick={() => setIv(opt)}
+                  style={{
+                    flex: 1, minWidth: 70,
+                    background: iv === opt ? "#10b981" : "#1e293b",
+                    color: iv === opt ? "#fff" : "#94a3b8",
+                    border: "1px solid " + (iv === opt ? "#10b981" : "#334155"),
+                    borderRadius: 6, padding: "8px 10px",
+                    fontSize: 13, fontWeight: 700, cursor: "pointer",
+                  }}>
+                  {opt}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button onClick={manualAnalyze}
+            style={{
+              width: "100%", padding: "12px",
+              background: "#0ea5e9", color: "#fff",
+              border: "none", borderRadius: 6,
+              fontSize: 13, fontWeight: 700, cursor: "pointer",
+            }}>
+            🎯 수정한 데이터로 5타입 비교 (재계산)
+          </button>
+        </div>
       </div>
 
       {/* 결과 */}
