@@ -756,39 +756,516 @@ function BacktestResults({ result, type, tp, sl, budget }) {
 }
 
 // ───── 탭: 타입 정의 ─────
+// 차트 정보 → 5타입 매칭% + 사유 (사용자 입력 기반)
+function matchAllTypes(input) {
+  return PATTERN_TYPES.map(t => {
+    const c = t.criteria;
+    const reasons = [];
+    let score = 0;
+
+    // 1. 등락률 (30점)
+    if (input.ch >= c.chMin && input.ch <= c.chMax) {
+      score += 30;
+      reasons.push({ ok: true, text: `등락률 +${input.ch}% (범위 +${c.chMin}~${c.chMax}%) ✓` });
+    } else {
+      const dist = Math.min(
+        Math.abs(input.ch - c.chMin),
+        Math.abs(input.ch - c.chMax)
+      );
+      const partial = Math.max(0, 30 * (1 - dist / 10));
+      score += partial;
+      reasons.push({
+        ok: false,
+        text: `등락률 +${input.ch}% (범위 +${c.chMin}~${c.chMax}% 벗어남) ✗`,
+      });
+    }
+
+    // 2. 거래대금 (25점)
+    if (input.amt >= c.amtMin && input.amt <= c.amtMax) {
+      score += 25;
+      reasons.push({ ok: true, text: `거래대금 ${input.amt}억 (범위 ${c.amtMin}~${c.amtMax === 99999 ? "무제한" : c.amtMax+"억"}) ✓` });
+    } else if (input.amt > 0) {
+      const ratio = input.amt < c.amtMin
+        ? input.amt / c.amtMin
+        : (c.amtMax === 99999 ? 1 : c.amtMax / input.amt);
+      score += 25 * Math.max(0, ratio);
+      reasons.push({
+        ok: false,
+        text: `거래대금 ${input.amt}억 (범위 ${c.amtMin}~${c.amtMax === 99999 ? "무제한" : c.amtMax+"억"} 벗어남) ✗`,
+      });
+    }
+
+    // 3. 60일 신고가 (15점)
+    if (c.h60 === true) {
+      if (input.h60) {
+        score += 15;
+        reasons.push({ ok: true, text: `60일 신고가 갱신 (필수) ✓` });
+      } else {
+        reasons.push({ ok: false, text: `60일 신고가 미갱신 (필수인데) ✗` });
+      }
+    } else if (c.h60 === false) {
+      if (!input.h60) {
+        score += 15;
+        reasons.push({ ok: true, text: `60일 신고가 X (박스권/하락) ✓` });
+      } else {
+        reasons.push({ ok: false, text: `60일 신고가 갱신 (박스권 X) ✗` });
+      }
+    } else {
+      score += 7;  // 무관 (절반)
+    }
+
+    // 4. 120일 신고가 (10점)
+    if (c.h120 === false && !input.h120) {
+      score += 10;
+      reasons.push({ ok: true, text: `120일 신고가 X (장기 횡보/하락) ✓` });
+    } else if (c.h120 === false && input.h120) {
+      reasons.push({ ok: false, text: `120일 신고가 갱신 (장기 추세) ✗` });
+    } else {
+      score += 5;
+    }
+
+    // 5. 시그널 빈도 (10점)
+    if (c.sigsMin != null) {
+      if (input.sigs >= c.sigsMin) {
+        score += 10;
+        reasons.push({ ok: true, text: `시그널 ${input.sigs}회 (${c.sigsMin}회+ 필수) ✓` });
+      } else {
+        reasons.push({ ok: false, text: `시그널 ${input.sigs}회 (${c.sigsMin}회+ 필요) ✗` });
+      }
+    } else {
+      score += 5;
+    }
+
+    // 6. 수급 (10점)
+    if (input.iv === "기+외") {
+      score += 10;
+      reasons.push({ ok: true, text: `수급 기+외 쌍매수 (최강) ✓` });
+    } else if (input.iv === "외만") {
+      score += 7;
+      reasons.push({ ok: true, text: `수급 외인 매수 (양호)` });
+    } else if (input.iv === "기만") {
+      score += 4;
+      reasons.push({ ok: false, text: `수급 기관만 (약함)` });
+    } else {
+      reasons.push({ ok: false, text: `수급 약함 ✗` });
+    }
+
+    return {
+      typeId: t.id, type: t,
+      match: Math.round(score),
+      reasons,
+    };
+  }).sort((a, b) => b.match - a.match);
+}
+
 function DefinitionsTab() {
+  // 사용자 추가 차트 (window.storage)
+  const [userPatterns, setUserPatterns] = useState({});
+
+  // 업로드 입력 상태
+  const [imgB64, setImgB64] = useState("");
+  const [stockName, setStockName] = useState("");
+  const [ch, setCh] = useState(15);
+  const [amt, setAmt] = useState(800);
+  const [h60, setH60] = useState(false);
+  const [h120, setH120] = useState(false);
+  const [sigs, setSigs] = useState(2);
+  const [wick, setWick] = useState(2);
+  const [iv, setIv] = useState("기+외");
+
+  const [results, setResults] = useState(null);
+
+  // window.storage 로드
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.storage) return;
+    (async () => {
+      try {
+        const list = await window.storage.list("upat:");
+        if (!list || !list.keys) return;
+        const out = {};
+        for (const k of list.keys) {
+          try {
+            const r = await window.storage.get(k);
+            if (r) {
+              const p = JSON.parse(r.value);
+              if (!out[p.typeId]) out[p.typeId] = [];
+              out[p.typeId].push({ ...p, key: k });
+            }
+          } catch (e) {}
+        }
+        setUserPatterns(out);
+      } catch (e) {}
+    })();
+  }, []);
+
+  function onFile(e) {
+    const f = e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = (ev) => setImgB64(ev.target.result);
+    r.readAsDataURL(f);
+  }
+
+  function analyze() {
+    const input = {
+      ch: parseFloat(ch), amt: parseFloat(amt),
+      h60, h120, sigs: parseInt(sigs) || 0,
+      wick: parseFloat(wick), iv,
+    };
+    const ranked = matchAllTypes(input);
+    setResults({ input, ranked });
+  }
+
+  async function saveToType(typeId) {
+    if (typeof window === "undefined" || !window.storage) {
+      alert("저장 기능 사용 불가");
+      return;
+    }
+    const id = "upat:" + typeId + "_" + Date.now();
+    const pattern = {
+      typeId, name: stockName || "이름 없음",
+      img: imgB64,
+      ch: parseFloat(ch), amt: parseFloat(amt),
+      h60, h120, sigs: parseInt(sigs) || 0,
+      wick: parseFloat(wick), iv,
+      addedAt: new Date().toISOString(),
+    };
+    try {
+      await window.storage.set(id, JSON.stringify(pattern));
+      // 메모리 갱신
+      setUserPatterns(prev => {
+        const next = { ...prev };
+        if (!next[typeId]) next[typeId] = [];
+        next[typeId] = [...next[typeId], { ...pattern, key: id }];
+        return next;
+      });
+      alert(`✅ TYPE ${typeId}에 추가됨: ${stockName || "이름 없음"}`);
+    } catch (e) {
+      alert("저장 실패: " + e.message);
+    }
+  }
+
+  async function deleteUserPattern(key, typeId) {
+    if (!confirm("이 학습 데이터를 삭제하시겠습니까?")) return;
+    if (typeof window !== "undefined" && window.storage) {
+      try { await window.storage.delete(key); } catch (e) {}
+    }
+    setUserPatterns(prev => {
+      const next = { ...prev };
+      if (next[typeId]) {
+        next[typeId] = next[typeId].filter(p => p.key !== key);
+      }
+      return next;
+    });
+  }
+
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      {PATTERN_TYPES.map(t => (
-        <div key={t.id} style={{
-          padding: 14, background: "#1e293b",
-          border: `2px solid ${t.color}`, borderRadius: 10,
+      {/* 이미지 업로드 + 분석 */}
+      <div style={{
+        padding: 14, background: "#1e293b",
+        border: "2px solid #fbbf24", borderRadius: 10,
+      }}>
+        <div style={{
+          fontSize: 16, fontWeight: 800, color: "#fbbf24", marginBottom: 4,
         }}>
+          🔍 차트 이미지로 타입 찾기
+        </div>
+        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>
+          차트 업로드 → 차트 정보 입력 → 5타입과 매칭% 비교 ·
+          <b style={{color:"#10b981"}}> 95%+면 학습 데이터 추가</b>
+        </div>
+
+        {/* 이미지 업로드 */}
+        <input type="file" accept="image/*" onChange={onFile}
+          style={{
+            width: "100%", padding: 10, fontSize: 13,
+            background: "#0f172a", color: "#fff",
+            border: "1px dashed #475569", borderRadius: 6,
+            marginBottom: 10, boxSizing: "border-box",
+          }} />
+        {imgB64 && (
           <div style={{
-            fontSize: 18, fontWeight: 800, color: t.color, marginBottom: 6,
+            marginBottom: 10, padding: 8,
+            background: "#0f172a", borderRadius: 6, textAlign: "center",
           }}>
-            {t.icon} TYPE {t.id} · {t.name}
+            <img src={imgB64} alt="차트"
+              style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 4 }} />
           </div>
-          <div style={{ fontSize: 13, color: "#cbd5e1", marginBottom: 8 }}>
-            {t.desc}
-          </div>
-          <div style={{
-            padding: 10, background: "#0f172a", borderRadius: 6,
-            fontSize: 12, color: "#94a3b8", marginBottom: 8,
-          }}>
-            <div><b style={{color:"#fbbf24"}}>조건</b></div>
-            <div>등락률: +{t.criteria.chMin}% ~ +{t.criteria.chMax}%</div>
-            <div>거래대금: {t.criteria.amtMin}억 ~ {t.criteria.amtMax === 99999 ? "무제한" : t.criteria.amtMax + "억"}</div>
-            <div>60일 신고가: {t.criteria.h60 === true ? "필수" : t.criteria.h60 === false ? "X" : "무관"}</div>
-            <div>120일 신고가: {t.criteria.h120 === false ? "X" : "무관"}</div>
-            {t.criteria.sigsMin && <div>시그널 빈도: {t.criteria.sigsMin}회 이상</div>}
-          </div>
-          <div style={{ fontSize: 11, color: "#64748b" }}>
-            <b style={{color:"#fbbf24"}}>예시 종목</b><br/>
-            {t.examples}
+        )}
+
+        {/* 종목명 */}
+        <input type="text" value={stockName} onChange={e => setStockName(e.target.value)}
+          placeholder="종목명 (예: 풍산)"
+          style={{
+            width: "100%", padding: 10, fontSize: 13,
+            background: "#0f172a", color: "#fff",
+            border: "1px solid #475569", borderRadius: 6,
+            marginBottom: 12, boxSizing: "border-box",
+          }} />
+
+        {/* 차트 정보 입력 */}
+        <div style={{ fontSize: 12, color: "#fbbf24", fontWeight: 700, marginBottom: 8 }}>
+          📊 차트 정보 입력
+        </div>
+
+        <SliderRow label="등락률" value={ch}
+          options={[5, 8, 10, 13, 15, 18, 22, 26, 29]}
+          onChange={setCh} unit="%" color="#10b981" />
+        <SliderRow label="거래대금" value={amt}
+          options={[100, 300, 500, 800, 1500, 3000, 5000, 10000]}
+          onChange={setAmt} unit="억" color="#fbbf24" />
+        <SliderRow label="시그널 빈도" value={sigs}
+          options={[1, 2, 3, 5, 10, 20]}
+          onChange={setSigs} unit="회" color="#0ea5e9" />
+        <SliderRow label="윗꼬리" value={wick}
+          options={[1, 2, 3, 5, 10]}
+          onChange={setWick} unit="%" color="#a855f7" />
+
+        {/* 체크박스 */}
+        <div style={{
+          display: "flex", gap: 12, padding: "10px 0",
+          fontSize: 13, color: "#cbd5e1", flexWrap: "wrap",
+        }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={h60} onChange={e => setH60(e.target.checked)}
+              style={{ width: 18, height: 18 }} />
+            60일 신고가 갱신
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={h120} onChange={e => setH120(e.target.checked)}
+              style={{ width: 18, height: 18 }} />
+            120일 신고가 갱신
+          </label>
+        </div>
+
+        {/* 수급 */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 6 }}>수급</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {["기+외", "외만", "기만", "둘다-"].map(opt => (
+              <button key={opt} onClick={() => setIv(opt)}
+                style={{
+                  flex: 1, minWidth: 70,
+                  background: iv === opt ? "#10b981" : "#0f172a",
+                  color: iv === opt ? "#fff" : "#94a3b8",
+                  border: `1px solid ${iv === opt ? "#10b981" : "#334155"}`,
+                  borderRadius: 6, padding: "8px 10px",
+                  fontSize: 13, fontWeight: 700, cursor: "pointer",
+                }}>
+                {opt}
+              </button>
+            ))}
           </div>
         </div>
-      ))}
+
+        <button onClick={analyze}
+          style={{
+            width: "100%", padding: "12px",
+            background: "#fbbf24", color: "#0f172a",
+            border: "none", borderRadius: 8,
+            fontSize: 15, fontWeight: 800, cursor: "pointer",
+          }}>
+          🎯 5타입과 비교
+        </button>
+      </div>
+
+      {/* 결과 */}
+      {results && (
+        <div style={{
+          padding: 14, background: "#1e293b",
+          border: "1px solid #334155", borderRadius: 10,
+        }}>
+          <div style={{
+            fontSize: 14, fontWeight: 800, color: "#fbbf24", marginBottom: 10,
+          }}>
+            🎯 5타입 매칭 결과 (높은 순)
+          </div>
+          <div style={{ display: "grid", gap: 10 }}>
+            {results.ranked.map(r => (
+              <MatchResultCard key={r.typeId}
+                result={r}
+                canSave={r.match >= 95 && imgB64}
+                onSave={() => saveToType(r.typeId)} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 5타입 정의 + 사용자 추가 차트 */}
+      {PATTERN_TYPES.map(t => {
+        const userList = userPatterns[t.id] || [];
+        return (
+          <div key={t.id} style={{
+            padding: 14, background: "#1e293b",
+            border: `2px solid ${t.color}`, borderRadius: 10,
+          }}>
+            <div style={{
+              fontSize: 18, fontWeight: 800, color: t.color, marginBottom: 6,
+            }}>
+              {t.icon} TYPE {t.id} · {t.name}
+              {userList.length > 0 && (
+                <span style={{
+                  fontSize: 11, color: "#10b981",
+                  marginLeft: 8, fontWeight: 700,
+                }}>
+                  +{userList.length} 학습됨
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 13, color: "#cbd5e1", marginBottom: 8 }}>
+              {t.desc}
+            </div>
+            <div style={{
+              padding: 10, background: "#0f172a", borderRadius: 6,
+              fontSize: 12, color: "#94a3b8", marginBottom: 8,
+            }}>
+              <div><b style={{color:"#fbbf24"}}>조건</b></div>
+              <div>등락률: +{t.criteria.chMin}% ~ +{t.criteria.chMax}%</div>
+              <div>거래대금: {t.criteria.amtMin}억 ~ {t.criteria.amtMax === 99999 ? "무제한" : t.criteria.amtMax + "억"}</div>
+              <div>60일 신고가: {t.criteria.h60 === true ? "필수" : t.criteria.h60 === false ? "X" : "무관"}</div>
+              <div>120일 신고가: {t.criteria.h120 === false ? "X" : "무관"}</div>
+              {t.criteria.sigsMin && <div>시그널 빈도: {t.criteria.sigsMin}회 이상</div>}
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>
+              <b style={{color:"#fbbf24"}}>기본 예시 종목</b><br/>
+              {t.examples}
+            </div>
+
+            {/* 사용자 추가 차트 */}
+            {userList.length > 0 && (
+              <div style={{
+                marginTop: 10, padding: 10,
+                background: "#0f172a", borderRadius: 6,
+                border: "1px dashed #10b981",
+              }}>
+                <div style={{
+                  fontSize: 12, color: "#10b981", fontWeight: 700, marginBottom: 8,
+                }}>
+                  🎓 학습된 사용자 차트 ({userList.length}개)
+                </div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {userList.map(u => (
+                    <div key={u.key} style={{
+                      padding: 8, background: "#1e293b",
+                      borderRadius: 6, display: "flex",
+                      gap: 10, alignItems: "center",
+                    }}>
+                      {u.img && (
+                        <img src={u.img} alt={u.name}
+                          style={{
+                            width: 80, height: 50, objectFit: "cover",
+                            borderRadius: 4, flexShrink: 0,
+                          }} />
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#fbbf24" }}>
+                          {u.name}
+                        </div>
+                        <div style={{ fontSize: 11, color: "#94a3b8" }}>
+                          +{u.ch}% · {u.amt}억 · {u.iv}
+                        </div>
+                      </div>
+                      <button onClick={() => deleteUserPattern(u.key, t.id)}
+                        style={{
+                          background: "transparent", color: "#ef4444",
+                          border: "1px solid #ef4444", borderRadius: 4,
+                          padding: "4px 8px", fontSize: 11, cursor: "pointer",
+                        }}>
+                        삭제
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MatchResultCard({ result, canSave, onSave }) {
+  const m = result.match;
+  const color = m >= 95 ? "#10b981" :
+                m >= 80 ? "#fbbf24" :
+                m >= 60 ? "#0ea5e9" : "#94a3b8";
+  const label = m >= 95 ? "🔥 거의 완벽" :
+                m >= 80 ? "✨ 매우 비슷" :
+                m >= 60 ? "✓ 비슷함" :
+                m >= 40 ? "⚠️ 약함" : "🚫 매우 약함";
+
+  return (
+    <div style={{
+      padding: 12, background: "#0f172a",
+      border: `2px solid ${color}`, borderRadius: 8,
+    }}>
+      <div style={{
+        display: "flex", justifyContent: "space-between",
+        alignItems: "center", marginBottom: 8, gap: 10,
+      }}>
+        <div>
+          <div style={{
+            fontSize: 14, fontWeight: 800, color: result.type.color,
+          }}>
+            {result.type.icon} TYPE {result.typeId} · {result.type.name}
+          </div>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+            {label}
+          </div>
+        </div>
+        <div style={{
+          fontSize: 28, fontWeight: 800, color, lineHeight: 1,
+        }}>
+          {m}%
+        </div>
+      </div>
+
+      {/* 점수 바 */}
+      <div style={{
+        height: 8, background: "#1e293b",
+        borderRadius: 4, overflow: "hidden", marginBottom: 10,
+      }}>
+        <div style={{
+          width: `${m}%`, height: "100%", background: color,
+          transition: "width 0.3s",
+        }} />
+      </div>
+
+      {/* 매칭 사유 */}
+      <details style={{ marginBottom: 8 }}>
+        <summary style={{
+          fontSize: 12, color: "#94a3b8", cursor: "pointer", fontWeight: 700,
+        }}>
+          📋 매칭 사유 보기
+        </summary>
+        <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
+          {result.reasons.map((r, i) => (
+            <div key={i} style={{
+              fontSize: 12,
+              color: r.ok ? "#10b981" : "#94a3b8",
+              padding: "4px 8px",
+              background: r.ok ? "rgba(16,185,129,0.1)" : "rgba(100,116,139,0.1)",
+              borderRadius: 4,
+            }}>
+              {r.text}
+            </div>
+          ))}
+        </div>
+      </details>
+
+      {canSave && (
+        <button onClick={onSave}
+          style={{
+            width: "100%", padding: "10px",
+            background: "#10b981", color: "#fff",
+            border: "none", borderRadius: 6,
+            fontSize: 13, fontWeight: 800, cursor: "pointer",
+          }}>
+          ➕ 이 타입에 학습 데이터로 추가 (95%+)
+        </button>
+      )}
     </div>
   );
 }
